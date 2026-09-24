@@ -25,7 +25,7 @@ const WEB_ROOT = path.resolve(env.WEB_ROOT || path.join(path.dirname(fileURLToPa
 const MAX_DOWN_BYTES = 1024 * 1024 * 1024; // per request
 const MAX_UP_BYTES = 1024 * 1024 * 1024;   // per request
 const MAX_OFFER_BYTES = 64 * 1024;
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 // One random buffer, streamed repeatedly: incompressible, and costs no CPU per request.
 const NOISE = randomFillSync(Buffer.alloc(1024 * 1024));

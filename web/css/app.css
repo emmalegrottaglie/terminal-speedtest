@@ -12,8 +12,20 @@ main { flex: 1; }
 header { position: sticky; top: 0; z-index: 10; background: var(--term-bg); padding-bottom: 4px; }
 .prompt { overflow-wrap: anywhere; }
 
-/* Boot block inside a screen, rather than as a full-screen loader */
-.boot.compact { padding: 18px var(--gutter) 6px; }
+/* Boot block inside a screen, rather than as a full-screen loader. The progress bar sits
+   first; the log below is a fixed-height tail, so new lines never move anything else. */
+.boot.compact { padding: 6px var(--gutter) 6px; }
+.boot.compact .boot-bar { margin-top: 4px; }
+/* Height in line units (lh), so Android's system font scaling never leaves a half-clipped line. */
+.boot-tail {
+  line-height: 25px; font-size: 12px;
+  height: 125px; height: 5lh; margin-top: 10px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.boot-tail .boot-line { flex: none; }
+
+/* Live chart under the scope: reserves its height so phases without bars don't shift layout */
+.live-chart { min-height: 136px; }
 
 /* Live readout inside the scope */
 .scope-readout { color: var(--a1); font-size: 44px; font-weight: 800; letter-spacing: -.04em; text-shadow: var(--glow-hero); line-height: 1; }
@@ -106,8 +118,21 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .toast .led.err { background: var(--a3); box-shadow: 0 0 8px var(--a3); }
 .toast .led.info { background: var(--a2); box-shadow: 0 0 8px var(--a2); }
 
-.nav a { padding: 6px 0; }
+/* Bottom nav uses buttons (see index.html); these mirror the kit's `.nav a` rules. */
 .nav { z-index: 20; }
+.nav button {
+  flex: 1; padding: 6px 0; text-align: center; color: var(--term-muted);
+  font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+}
+.nav button[aria-current="page"] { color: var(--a1); }
 
-/* Keep scrolled-to results clear of the sticky header */
-#l-result { scroll-margin-top: 120px; }
+/* Touch: replace the WebView's fixed grey tap flash with theme-coloured press states,
+   and stop long-presses on controls from selecting text or opening callouts. */
+html { -webkit-tap-highlight-color: transparent; }
+button, .nav, .band, .chip, .switch, .legend {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.nav button:active { color: var(--a1); background: var(--term-faint); }
+button.chip:not(:disabled):active { background: var(--a1); border-color: var(--a1); color: var(--term-bg); }
+.qband-action:active { background: var(--term-bg); color: var(--a3); }
+

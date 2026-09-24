@@ -5,9 +5,10 @@ import * as H from './history.js';
 import * as G from './grade.js';
 import { fetchInfo, measureLatency, measureDownload, measureUpload } from './measure.js';
 import { runLossTest, lossEstimate } from './loss.js';
+import { locateNearest, ndt7Download, ndt7Upload, NDT7_TEST_S } from './ndt7.js';
 
 const $ = (id) => document.getElementById(id);
-const VERSION = '0.1';
+const VERSION = '0.2';
 const MAX_BARS = 12;
 const VIEWS = ['test', 'loss', 'history', 'settings'];
 
@@ -21,7 +22,6 @@ let wakeLock = null;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = (n) => String(n).padStart(2, '0');
 const DASH = '—';
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function fmtMbps(v) {
   if (v == null || !Number.isFinite(v)) return DASH;
@@ -59,6 +59,7 @@ function server() {
 }
 function serverLabel(url) {
   const st = serverStatus.get(url);
+  if (url === S.MLAB_URL) return st?.info ? `M-LAB ${st.info.name} · ${st.info.location}` : 'M-LAB · NEAREST';
   if (st?.info) return `${st.info.name} · ${st.info.location}`;
   try { return new URL(url).host; } catch { return url; }
 }
@@ -75,18 +76,21 @@ function toast(message, kind = 'err') {
 // ── Header, footer, navigation ────────────────────────────────────────────
 function promptFor(v) {
   const s = server();
-  const name = s ? (serverStatus.get(s.url)?.info?.name || 'custom') : null;
+  const mlab = S.isMlab(s);
+  const name = mlab ? 'mlab' : s ? (serverStatus.get(s.url)?.info?.name || 'custom') : null;
   if (!s && v !== 'history') return 'config --add-server <address>';
   const sp = settings.speed, l = settings.loss;
   switch (v) {
     case 'test': {
-      const flags = [`--server ${name}`, `--streams ${sp.streams}`, `--time ${sp.durationS}s`];
+      const flags = mlab ? ['--server mlab', '--ndt7', `--time ${NDT7_TEST_S}s`]
+        : [`--server ${name}`, `--streams ${sp.streams}`, `--time ${sp.durationS}s`];
       if (!sp.runDownload) flags.push('--no-download');
       if (!sp.runUpload) flags.push('--no-upload');
-      if (sp.runLoss) flags.push('--loss');
+      if (sp.runLoss && !mlab) flags.push('--loss');
       return `speedtest --run ${flags.join(' ')}`;
     }
     case 'loss':
+      if (mlab) return 'losstest --server mlab  # unavailable: needs your own server';
       return `losstest --server ${name} --size ${l.packetSize} --rate ${l.rate} --time ${l.durationS}s --late ${l.lateMs}ms --prewait ${l.preWaitS}s`;
     case 'history':
       return `history --list --limit 100`;
@@ -111,16 +115,17 @@ function renderHeader() {
   const ip = st?.info?.ip;
   $('sub-right').textContent = ip ? `${ip.includes(':') ? 'IPV6' : 'IPV4'} ${ip}` : (st && !st.ok ? 'UNREACHABLE' : DASH);
   if (!running) $('prompt').textContent = promptFor(view);
-  $('end-right').textContent = st?.info ? `SERVER ${st.info.name} · V${st.info.version}` : `TERMSPEED V${VERSION}`;
+  $('end-right').textContent = S.isMlab(s) ? 'M-LAB NDT7 · OPEN DATA'
+    : st?.info ? `SERVER ${st.info.name} · V${st.info.version}` : `TERMSPEED V${VERSION}`;
 }
 
 function route() {
   const wanted = location.hash.slice(1);
   view = VIEWS.includes(wanted) ? wanted : 'test';
   for (const v of VIEWS) $(`view-${v}`).hidden = v !== view;
-  document.querySelectorAll('.nav a').forEach((a) => {
-    if (a.dataset.view === view) a.setAttribute('aria-current', 'page');
-    else a.removeAttribute('aria-current');
+  document.querySelectorAll('.nav button').forEach((b) => {
+    if (b.dataset.view === view) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
   if (view === 'history') renderHistory();
   if (view === 'settings') renderServers();
@@ -168,8 +173,9 @@ function gradeChip(g) {
 
 // Bars follow the kit: value above every bar, axis label below, min–max scaling with a
 // 12% floor, peak marked. Long series are averaged into groups so each bar keeps a
-// readable value; the section label states the grouping.
-function renderBars(barsEl, labelEl, title, unit, values, fmt, { peakIsMax = true } = {}) {
+// readable value; the section label states the grouping. `per` is the unit of one value:
+// 'second' (axis 1S, 2S…) or 'sample' (axis #1, #2…).
+function renderBars(barsEl, labelEl, title, unit, values, fmt, { per = 'second' } = {}) {
   const group = Math.max(1, Math.ceil(values.length / MAX_BARS));
   const points = [];
   for (let i = 0; i < values.length; i += group) {
@@ -177,16 +183,19 @@ function renderBars(barsEl, labelEl, title, unit, values, fmt, { peakIsMax = tru
     points.push({ v: slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : null, end: Math.min(values.length, i + group) });
   }
   const known = points.map((p) => p.v).filter((v) => v != null);
-  labelEl.textContent = `${title} · ${unit} ${group === 1 ? 'by second' : `per ${group} s`}`;
+  const grouping = per === 'sample'
+    ? (group === 1 ? 'per sample' : `per ${group} samples`)
+    : (group === 1 ? 'by second' : `per ${group} s`);
+  labelEl.textContent = `${title} · ${unit} ${grouping}`;
   if (!known.length) { barsEl.innerHTML = ''; return; }
   const lo = Math.min(...known), hi = Math.max(...known), span = hi - lo || 1;
-  const peakValue = peakIsMax ? hi : lo;
-  const peak = points.findIndex((p) => p.v === peakValue);
+  const peak = points.findIndex((p) => p.v === hi);
+  const axis = (end) => (per === 'sample' ? `#${end}` : `${end}S`);
   barsEl.innerHTML = points.map((p, i) => {
     const pct = p.v == null ? 0 : 12 + ((p.v - lo) / span) * 88;
     return `<div class="bar${i === peak ? ' peak' : ''}"><div class="bar-value">${p.v == null ? DASH : fmt(p.v)}</div>` +
       `<div class="bar-track"><div class="bar-fill" style="--pct:${pct}%"></div></div>` +
-      `<div class="bar-label">${p.end}S</div></div>`;
+      `<div class="bar-label">${axis(p.end)}</div></div>`;
   }).join('');
 }
 
@@ -205,6 +214,7 @@ function makeBoot(prefix, command) {
   return {
     step(text) { current = document.createElement('div'); current.className = 'boot-line'; current.textContent = text; lines.append(current); label = text; setPct(pct); },
     ok(detail) { if (!current) return; current.insertAdjacentHTML('beforeend', `${detail ? ` · ${esc(detail)}` : ''} <span class="ok">[ OK ]</span>`); current = null; },
+    skip(detail) { if (!current) return; current.insertAdjacentHTML('beforeend', ` · ${esc(detail)} <span class="ok">[ SKIP ]</span>`); current = null; },
     fail(detail) { if (!current) return; current.insertAdjacentHTML('beforeend', ` · ${esc(detail)} <span class="ok">[ FAIL ]</span>`); current = null; },
     progress: setPct,
     done(text) { label = text; setPct(100); },
@@ -278,6 +288,10 @@ function lossHooks(boot, cfg, progress, onRtt) {
   const total = cfg.rate * cfg.durationS;
   const states = new Uint8Array(total);
   let sent = 0, received = 0, lastRtt = null, dirty = true;
+  const seconds = Math.ceil(total / cfg.rate);
+  const rttSum = new Float64Array(seconds), rttCount = new Uint32Array(seconds);
+  const perSecond = () => Array.from({ length: Math.min(seconds, Math.ceil(sent / cfg.rate)) },
+    (_, i) => (rttCount[i] ? rttSum[i] / rttCount[i] : null));
   const steps = {
     connect: 'opening data channel · unordered · no retransmit',
     prewait: `pre-wait · ${cfg.preWaitS} s · not recorded`,
@@ -290,7 +304,7 @@ function lossHooks(boot, cfg, progress, onRtt) {
     if (!dirty) return;
     dirty = false;
     renderMap(states, sent);
-    onRtt?.(lastRtt, sent, received);
+    onRtt?.(lastRtt, sent, received, perSecond());
   }, 250);
   return {
     states,
@@ -301,7 +315,12 @@ function lossHooks(boot, cfg, progress, onRtt) {
         boot.step(steps[p]);
       },
       onProgress(frac) { sent = Math.round(frac * total); dirty = true; progress(frac); },
-      onPacket(seq, rtt) { states[seq] = rtt > cfg.lateMs ? 2 : 1; received++; lastRtt = rtt; dirty = true; },
+      onPacket(seq, rtt) {
+        states[seq] = rtt > cfg.lateMs ? 2 : 1;
+        const sec = Math.floor(seq / cfg.rate);
+        rttSum[sec] += rtt; rttCount[sec]++;
+        received++; lastRtt = rtt; dirty = true;
+      },
     },
     finish(ok) {
       clearInterval(timer);
@@ -314,13 +333,25 @@ function lossHooks(boot, cfg, progress, onRtt) {
   };
 }
 
+// M-Lab publishes every result with the client's IP address; ask once before the first test.
+function mlabConsent() {
+  if (settings.privacy.mlabConsent) return true;
+  const ok = confirm('M-Lab publishes every test result as open data, including your IP address and the time of the test ' +
+    '(measurementlab.net/privacy). Packet loss is not available on M-Lab.\n\nRun tests against M-Lab?');
+  if (ok) setPath('privacy.mlabConsent', true);
+  return ok;
+}
+
 async function runFull() {
   if (running?.kind === 'full') { running.ctrl.abort(); return; }
   const s = requireServer();
   if (!s) return;
+  const mlab = S.isMlab(s);
+  if (mlab && !mlabConsent()) return;
   const ctrl = new AbortController();
   const { signal } = ctrl;
   const sp = { ...settings.speed };
+  if (mlab) sp.durationS = NDT7_TEST_S;
   const cfg = { ...settings.loss };
   const command = promptFor('test');
   setRunning('full', ctrl);
@@ -328,16 +359,18 @@ async function runFull() {
   $('t-idle').hidden = true;
   $('t-result').hidden = true;
   $('t-run').hidden = false;
-  $('t-live-label').hidden = true;
+  const liveBars = (title, unit, values, fmt, opts) => renderBars($('t-live-bars'), $('t-live-label'), title, unit, values, fmt, opts);
   $('t-live-bars').innerHTML = '';
+  $('t-live-label').textContent = 'Live · waiting for data';
   setLive(DASH, 'WAITING');
+  window.scrollTo(0, 0);
   const boot = makeBoot('t', command);
   const progress = makeProgress(boot, [
     { key: 'info', weight: 1 },
-    { key: 'ping', weight: Math.max(1, sp.pingSamples * 0.05) },
+    ...(mlab ? [] : [{ key: 'ping', weight: Math.max(1, sp.pingSamples * 0.05) }]),
     ...(sp.runDownload ? [{ key: 'down', weight: sp.durationS }] : []),
     ...(sp.runUpload ? [{ key: 'up', weight: sp.durationS }] : []),
-    ...(sp.runLoss ? [{ key: 'loss', weight: cfg.durationS + cfg.preWaitS + 3 }] : []),
+    ...(sp.runLoss && !mlab ? [{ key: 'loss', weight: cfg.durationS + cfg.preWaitS + 3 }] : []),
   ]);
 
   const phaseOpts = (unit) => ({
@@ -347,46 +380,66 @@ async function runFull() {
       setLive(fmtMbps(mbps), unit);
       progress.at(elapsedMs / (sp.durationS * 1000));
       const done = buckets.slice(0, Math.floor(elapsedMs / 1000)).map((b) => (b * 8) / 1e6);
-      renderBars($('t-live-bars'), $('t-live-label'), unit.split(' ')[1] === 'DOWN' ? 'Download' : 'Upload', 'Mbps', done, fmtMbps);
+      liveBars(unit.endsWith('DOWN') ? 'Download' : 'Upload', 'Mbps', done, fmtMbps);
     },
   });
 
   try {
     progress.begin('info');
-    boot.step('resolving server');
-    const info = await fetchInfo(s.url, signal);
+    boot.step(mlab ? 'locating nearest m-lab server' : 'resolving server');
+    const info = mlab ? await locateNearest(signal) : await fetchInfo(s.url, signal);
     serverStatus.set(s.url, { ok: true, info });
     boot.ok(`${info.name} · ${info.location}`);
 
-    progress.begin('ping');
-    boot.step(`measuring latency · ${sp.pingSamples} samples`);
-    const lat = await measureLatency(s.url, sp.pingSamples, {
-      signal, onSample: (rtt, i, n) => { setLive(fmtMs(rtt), 'MS PING'); progress.at(i / n); },
-    });
-    boot.ok(`${fmtMs(lat.ping)} ms`);
+    // Own servers: HTTP pings. M-Lab has no ping endpoint; its TCP min RTT is used instead.
+    let lat = { ping: null, jitter: null };
+    if (!mlab) {
+      progress.begin('ping');
+      boot.step(`measuring latency · ${sp.pingSamples} samples`);
+      const pings = [];
+      lat = await measureLatency(s.url, sp.pingSamples, {
+        signal,
+        onSample: (rtt, i, n) => {
+          pings.push(rtt);
+          setLive(fmtMs(rtt), 'MS PING');
+          liveBars('Latency', 'ms', pings, fmtMs, { per: 'sample' });
+          progress.at(i / n);
+        },
+      });
+      boot.ok(`${fmtMs(lat.ping)} ms`);
+    }
 
     let down = null, up = null, loss = null, lossError = null;
     if (sp.runDownload) {
       progress.begin('down');
-      boot.step(`download · ${sp.durationS} s · ${sp.streams} streams`);
-      $('t-live-label').hidden = false;
-      down = await measureDownload(s.url, phaseOpts('MBPS DOWN'));
+      boot.step(mlab ? `download · ${sp.durationS} s · ndt7 single stream` : `download · ${sp.durationS} s · ${sp.streams} streams`);
+      $('t-live-bars').innerHTML = '';
+      down = mlab ? await ndt7Download(info, phaseOpts('MBPS DOWN')) : await measureDownload(s.url, phaseOpts('MBPS DOWN'));
       boot.ok(`${fmtMbps(down.mbps)} mbps`);
     }
     if (sp.runUpload) {
       progress.begin('up');
-      boot.step(`upload · ${sp.durationS} s · ${sp.streams} streams`);
-      $('t-live-label').hidden = false;
+      boot.step(mlab ? `upload · ${sp.durationS} s · ndt7 single stream` : `upload · ${sp.durationS} s · ${sp.streams} streams`);
       $('t-live-bars').innerHTML = '';
-      up = await measureUpload(s.url, phaseOpts('MBPS UP'));
+      up = mlab ? await ndt7Upload(info, phaseOpts('MBPS UP')) : await measureUpload(s.url, phaseOpts('MBPS UP'));
       boot.ok(`${fmtMbps(up.mbps)} mbps`);
     }
-    if (sp.runLoss) {
+    if (mlab) {
+      lat.ping = down?.minRttMs ?? up?.minRttMs ?? null;
+      info.ip = down?.clientIp ?? up?.clientIp ?? null;
+      if (sp.runLoss) {
+        boot.step('packet loss');
+        boot.skip('needs your own server');
+      }
+    } else if (sp.runLoss) {
       progress.begin('loss');
-      $('t-live-label').hidden = true;
       $('t-live-bars').innerHTML = '';
+      $('t-live-label').textContent = 'Packet loss · waiting for packets';
       setLive(DASH, 'MS RTT');
-      const tracker = lossHooks(boot, cfg, (f) => progress.at(f), (rtt) => setLive(fmtMs(rtt), 'MS RTT'));
+      const tracker = lossHooks(boot, cfg, (f) => progress.at(f), (rtt, sent, received, perSec) => {
+        setLive(fmtMs(rtt), 'MS RTT');
+        liveBars('Latency', 'ms', perSec, fmtMs);
+      });
       try {
         loss = await runLossTest(s.url, cfg, { signal, ...tracker.hooks });
         tracker.finish(true);
@@ -401,7 +454,7 @@ async function runFull() {
 
     const lossPct = loss?.totalLoss ?? null;
     const result = {
-      at: new Date(), info, sp, cfg, ping: lat.ping, jitter: lat.jitter, down, up, loss, lossError,
+      at: new Date(), source: mlab ? 'mlab' : 'own', info, sp, cfg, ping: lat.ping, jitter: lat.jitter, down, up, loss, lossError,
       grade: G.gradeOf({ ping: lat.ping, jitter: lat.jitter, loss: lossPct }),
       stability: G.stabilityOf({ jitter: lat.jitter, loss: lossPct, late: loss?.latePct ?? null }),
     };
@@ -410,7 +463,7 @@ async function runFull() {
     $('t-result').hidden = false;
     if (settings.history.save) {
       H.add({
-        at: result.at.toISOString(), kind: 'full', server: info.name,
+        at: result.at.toISOString(), kind: mlab ? 'mlab' : 'full', server: info.name,
         down: down?.mbps ?? null, up: up?.mbps ?? null, ping: lat.ping, jitter: lat.jitter,
         loss: lossPct, grade: result.grade,
       });
@@ -444,26 +497,28 @@ function renderFull(r) {
   const meta = [];
   if (r.down) meta.push(`DOWNLOAD ${fmtMbps(r.down.mbps)} MBPS`);
   if (r.up) meta.push(`UPLOAD ${fmtMbps(r.up.mbps)} MBPS`);
-  meta.push(`PING ${fmtMs(r.ping)} MS`);
+  meta.push(`${r.source === 'mlab' ? 'TCP MIN RTT' : 'PING'} ${fmtMs(r.ping)} MS`);
   $('r-meta').textContent = meta.join(' · ');
 
   const chips = [];
   if (r.info.ip) chips.push(`<span class="chip">${r.info.ip.includes(':') ? 'IPV6' : 'IPV4'}</span>`);
-  if (r.down || r.up) chips.push(`<span class="chip two">${r.sp.streams} STREAM${r.sp.streams > 1 ? 'S' : ''}</span>`);
+  if (r.source === 'mlab') chips.push('<span class="chip two">M-LAB NDT7</span>');
+  else if (r.down || r.up) chips.push(`<span class="chip two">${r.sp.streams} STREAM${r.sp.streams > 1 ? 'S' : ''}</span>`);
   if (r.loss) chips.push(`<span class="chip three">WEBRTC LOSS</span>`);
   const conn = navigator.connection?.type;
   if (conn && conn !== 'unknown') chips.push(`<span class="chip ghost">${esc(conn.toUpperCase())}</span>`);
   chips.push(`<span class="chip ghost">${esc(r.info.name)}</span>`);
   $('r-chips').innerHTML = chips.join('');
 
-  const lossSub = r.loss ? `${r.loss.sent} PACKETS` : (r.lossError ? 'FAILED' : 'NOT RUN');
+  const mlab = r.source === 'mlab';
+  const lossSub = mlab ? 'OWN SERVER ONLY' : r.loss ? `${r.loss.sent} PACKETS` : (r.lossError ? 'FAILED' : 'NOT RUN');
   $('r-tiles').innerHTML = [
-    tile(fmtMs(r.ping), 'MS PING', { hl: true, sub: G.pingWord(r.ping) }),
-    tile(fmtMs(r.jitter), 'MS JITTER'),
+    tile(fmtMs(r.ping), mlab ? 'MS TCP MIN RTT' : 'MS PING', { hl: true, sub: G.pingWord(r.ping) }),
+    tile(fmtMs(r.jitter), 'MS JITTER', { sub: mlab ? 'OWN SERVER ONLY' : '' }),
     tile(r.loss ? `${fmtPct(r.loss.totalLoss)}%` : DASH, 'PACKET LOSS', { sub: lossSub }),
     tile(fmtMbps(r.down?.mbps), 'MBPS DOWN', { sub: r.down ? '' : 'NOT RUN' }),
     tile(fmtMbps(r.up?.mbps), 'MBPS UP', { sub: r.up ? '' : 'NOT RUN' }),
-    tile(gradeChip(r.grade), 'GRADE', { hl: true, raw: true, sub: r.loss ? '' : 'NO LOSS DATA' }),
+    tile(gradeChip(r.grade), 'GRADE', { hl: true, raw: true, sub: mlab ? 'LATENCY ONLY' : r.loss ? '' : 'NO LOSS DATA' }),
   ].join('');
 
   $('r-down-block').hidden = !r.down;
@@ -476,7 +531,7 @@ function renderFull(r) {
   const w = G.STABILITY_WEIGHTS;
   const latePart = r.loss ? ` − ${w.late} × late ${fmtPct(r.loss.latePct)}%` : '';
   const lossPart = r.loss ? ` − ${w.loss} × loss ${fmtPct(r.loss.totalLoss)}%` : ' (loss not measured)';
-  $('r-why-panel').innerHTML =
+  $('r-why-panel').innerHTML = mlab ? mlabWhy(r) :
     `<b>STABILITY</b> = 100 − ${w.jitter} × jitter ${esc(fmtMs(r.jitter))} ms${esc(lossPart)}${esc(latePart)}, clamped to 0–100.<br>` +
     `<b>JITTER</b> is the mean change between consecutive ping samples (${r.sp.pingSamples} HTTP pings).<br>` +
     `<b>GRADE</b> is the best step every measured value meets: ` +
@@ -485,32 +540,58 @@ function renderFull(r) {
       r.lossError ? `<b>LOSS</b> test failed: ${esc(r.lossError)}` : '<b>LOSS</b> phase was switched off.');
   $('r-why-panel').hidden = true;
   $('r-why').setAttribute('aria-expanded', 'false');
-  $('r-when').textContent = `MEASURED ${stamp(r.at)} AGAINST ${r.info.name} (${r.info.location})` +
-    (r.down || r.up ? ` · FIRST ${r.sp.warmupS} S EXCLUDED FROM SPEED AVERAGES` : '');
+  $('r-when').textContent = `MEASURED ${stamp(r.at)} AGAINST ${mlab ? 'M-LAB ' : ''}${r.info.name} (${r.info.location})` +
+    (r.down || r.up ? ` · FIRST ${r.sp.warmupS} S EXCLUDED FROM SPEED AVERAGES` : '') +
+    (mlab ? ' · PUBLISHED BY M-LAB AS OPEN DATA' : '');
+}
+
+function mlabWhy(r) {
+  const retrans = r.down?.retransPct;
+  return `<b>SOURCE</b> M-Lab NDT7: one TCP stream per direction for ${NDT7_TEST_S} s, to the nearest M-Lab server.<br>` +
+    `<b>LATENCY</b> is the server's TCP minimum round-trip time during the test, not an HTTP ping.<br>` +
+    `<b>JITTER, LOSS, STABILITY</b> need the echo on your own server, so they are not measured here.` +
+    (retrans != null ? ` The download's TCP retransmission rate was ${esc(fmtPct(retrans))}%, which hints at loss but is not packet loss.` : '') + '<br>' +
+    `<b>GRADE</b> uses latency only: ` + G.GRADE_STEPS.map((s) => `${s.grade} ≤ ${s.ping} ms`).join(' · ') + ' · otherwise F.';
 }
 
 async function runLoss() {
   if (running?.kind === 'loss') { running.ctrl.abort(); return; }
   const s = requireServer();
   if (!s) return;
+  if (S.isMlab(s)) {
+    toast('PACKET LOSS NEEDS YOUR OWN SERVER · M-LAB HAS NO PACKET ECHO');
+    return;
+  }
   const ctrl = new AbortController();
   const cfg = { ...settings.loss };
   const command = promptFor('loss');
   setRunning('loss', ctrl);
 
-  $('l-result').hidden = true;
-  $('l-run').hidden = false;
-  $('l-map-block').hidden = false;
+  // Live view: counters, packet map and latency chart on top; the log tail below them.
+  const show = (live, result) => {
+    $('l-live').hidden = !live;
+    $('l-run').hidden = !live;
+    $('l-result').hidden = !result;
+    $('l-map-block').hidden = !(live || result);
+    $('l-charts').hidden = !(live || result);
+  };
+  show(true, false);
   $('l-map').innerHTML = '';
+  $('l-rtt-bars').innerHTML = '';
+  $('l-rtt-label').textContent = 'Latency · waiting for packets';
+  $('l-lost-block').hidden = true;
+  $('l-when').textContent = '';
+  window.scrollTo(0, 0);
   const boot = makeBoot('l', command);
   const progress = makeProgress(boot, [
     { key: 'info', weight: 1 },
     { key: 'loss', weight: cfg.durationS + cfg.preWaitS + 3 },
   ]);
-  const liveTiles = (rtt, sent, received) => {
+  const liveTiles = (rtt, sent, received, perSec) => {
     $('l-live-tiles').innerHTML = [
       tile(String(sent), 'SENT'), tile(String(received), 'RECEIVED'), tile(fmtMs(rtt), 'MS LAST RTT', { hl: true }),
     ].join('');
+    if (perSec) renderBars($('l-rtt-bars'), $('l-rtt-label'), 'Latency', 'ms', perSec, fmtMs);
   };
   liveTiles(null, 0, 0);
 
@@ -532,9 +613,7 @@ async function runLoss() {
     }
     boot.done('complete');
     renderLoss(summary, cfg);
-    $('l-run').hidden = true;
-    $('l-result').hidden = false;
-    $('l-result').scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+    show(false, true);
     if (settings.history.save) {
       H.add({
         at: new Date().toISOString(), kind: 'loss', server: info.name, down: null, up: null,
@@ -543,10 +622,9 @@ async function runLoss() {
       });
     }
   } catch (err) {
-    $('l-run').hidden = true;
+    show(false, false);
     if (err.name === 'AbortError') toast('TEST ABORTED', 'info');
     else toast(explainError(err, s.url));
-    $('l-map-block').hidden = $('l-result').hidden;
   } finally {
     setRunning(null);
   }
@@ -568,6 +646,9 @@ function renderLoss(r, cfg) {
     tile(String(r.received), 'RECEIVED'),
     tile(fmtBytes(r.bytesEachWay), 'EACH WAY'),
   ].join('');
+  // Parameters can change after a run, so the result states the ones it was measured with.
+  $('l-when').textContent = `MEASURED ${stamp(new Date())} · ${r.sent} PACKETS OF ${cfg.packetSize} B AT ${cfg.rate}/S · ` +
+    `LATE AFTER ${cfg.lateMs} MS · PRE-WAIT ${cfg.preWaitS} S`;
   renderBars($('l-rtt-bars'), $('l-rtt-label'), 'Latency', 'ms', r.perSecond.map((s) => s.avgRtt), fmtMs);
   const lost = r.perSecond.map((s) => s.lost);
   $('l-lost-block').hidden = !lost.some((n) => n > 0);
@@ -576,7 +657,7 @@ function renderLoss(r, cfg) {
 
 // ── Idle, history, loss parameters ────────────────────────────────────────
 function renderIdle() {
-  const last = H.list().find((e) => e.kind === 'full');
+  const last = H.list().find((e) => e.kind !== 'loss');
   const lines = ['<div class="boot-line cmd">❯ awaiting command</div>'];
   if (last) {
     const parts = [];
@@ -594,7 +675,7 @@ function renderHistory() {
   const items = H.list();
   $('h-rows').innerHTML = items.length ? items.map((e) => `<tr>
       <td class="t-key">${esc(stamp(new Date(e.at)))}</td>
-      <td class="t-type">${e.kind === 'loss' ? 'LOSS' : 'FULL'}</td>
+      <td class="t-type">${{ loss: 'LOSS', mlab: 'M-LAB' }[e.kind] || 'FULL'}</td>
       <td class="t-num">${esc(fmtMbps(e.down))}</td>
       <td class="t-data">${esc(fmtMbps(e.up))}</td>
       <td class="t-delta">${esc(fmtMs(e.ping))}</td>
@@ -618,7 +699,7 @@ function renderPresets() {
 // ── Servers ───────────────────────────────────────────────────────────────
 async function checkServer(url) {
   try {
-    const info = await fetchInfo(url);
+    const info = url === S.MLAB_URL ? await locateNearest() : await fetchInfo(url);
     serverStatus.set(url, { ok: true, info });
   } catch (err) {
     serverStatus.set(url, { ok: false, error: explainError(err, url) });
@@ -637,19 +718,25 @@ function renderServers() {
   $('s-servers').innerHTML = list.map((s, i) => {
     const st = serverStatus.get(s.url);
     const active = i === settings.activeServer;
-    const name = st?.info ? `${st.info.name} · ${st.info.location}` : (st ? st.error : 'NOT CHECKED');
+    const mlab = S.isMlab(s);
+    const name = st?.info ? `${mlab ? 'M-LAB ' : ''}${st.info.name} · ${st.info.location}` : (st ? st.error : mlab ? 'M-LAB · NEAREST SERVER' : 'NOT CHECKED');
+    const detail = mlab ? 'MEASUREMENTLAB.NET · SPEED ONLY · RESULTS PUBLISHED AS OPEN DATA' : s.url;
     return `<div class="server">
       <span class="led${st?.ok ? '' : ' off'}" aria-label="${st?.ok ? 'online' : 'offline or unchecked'}"></span>
-      <div class="server-main"><div class="server-name">${esc(name)}</div><div class="server-url">${esc(s.url)}</div></div>
+      <div class="server-main"><div class="server-name">${esc(name)}</div><div class="server-url">${esc(detail)}</div></div>
       <button class="chip${active ? '' : ' ghost'}" data-use="${i}" aria-pressed="${active}">${active ? 'IN USE' : 'USE'}</button>
       <button class="chip ghost" data-check="${i}">CHECK</button>
-      <button class="chip ghost" data-remove="${i}" aria-label="Remove server">✕</button></div>`;
+      ${mlab ? '' : `<button class="chip ghost" data-remove="${i}" aria-label="Remove server">✕</button>`}</div>`;
   }).join('');
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────
 function bind() {
   window.addEventListener('hashchange', route);
+  document.querySelector('.nav').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-view]');
+    if (b) location.hash = `#${b.dataset.view}`;
+  });
   $('t-run-btn').addEventListener('click', runFull);
   $('l-run-btn').addEventListener('click', runLoss);
   $('r-why').addEventListener('click', () => {
@@ -704,7 +791,10 @@ function bind() {
     e.preventDefault();
     const url = S.normalizeServerUrl($('s-add-url').value);
     if (!url) { toast('ENTER A HTTP:// OR HTTPS:// ADDRESS'); return; }
-    if (!settings.servers.some((s) => s.url === url)) settings.servers.push({ url });
+    if (!settings.servers.some((s) => s.url === url)) {
+      const at = settings.servers.findIndex(S.isMlab);
+      settings.servers.splice(at < 0 ? settings.servers.length : at, 0, { url });
+    }
     settings.activeServer = settings.servers.findIndex((s) => s.url === url);
     S.save(settings);
     $('s-add-url').value = '';

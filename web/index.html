@@ -38,19 +38,22 @@
         <div class="boot-line">no result yet · press run test</div>
       </div>
 
+      <!-- While running, graphics stay on top at fixed heights; the log below keeps only its newest lines. -->
       <div id="t-run" hidden>
-        <div class="boot compact" aria-live="polite">
-          <div id="t-boot-lines"></div>
-          <div class="boot-bar"><div class="boot-fill" id="t-boot-fill"></div></div>
-          <div class="boot-pct" id="t-boot-pct">0% — CONNECTING</div>
-        </div>
         <div class="scope brk" aria-label="Live measurement">
           <div class="scope-ring"></div><div class="scope-ring"></div><div class="scope-ring"></div>
           <div class="scope-sweep"></div>
           <div class="scope-center"><div><div class="scope-readout" id="t-live">—</div><div class="scope-unit" id="t-live-unit">WAITING</div></div></div>
         </div>
-        <div class="sect" id="t-live-label" hidden>Live</div>
-        <div class="bars" id="t-live-bars"></div>
+        <div class="live-chart">
+          <div class="sect" id="t-live-label">Live</div>
+          <div class="bars" id="t-live-bars"></div>
+        </div>
+        <div class="boot compact" aria-live="polite">
+          <div class="boot-bar"><div class="boot-fill" id="t-boot-fill"></div></div>
+          <div class="boot-pct" id="t-boot-pct">0% — CONNECTING</div>
+          <div class="boot-tail" id="t-boot-lines"></div>
+        </div>
       </div>
 
       <div id="t-result" hidden>
@@ -93,6 +96,46 @@
 
     <!-- ── PACKET LOSS ──────────────────────────────────────────────────── -->
     <section id="view-loss" class="view" data-title="// PACKET LOSS" hidden>
+      <!-- Results and live graphics first; parameters live below the run button. -->
+      <div id="l-live" hidden>
+        <div class="sect">Live</div>
+        <div class="tiles" id="l-live-tiles"></div>
+      </div>
+
+      <div id="l-result" hidden>
+        <div class="sect">Result</div>
+        <div class="tiles" id="l-tiles"></div>
+      </div>
+
+      <div id="l-map-block" hidden>
+        <div class="sect">Packet map · one glyph per packet</div>
+        <div class="pmap" id="l-map" role="img" aria-label="Packet map"></div>
+        <div class="legend">
+          <span><b class="pm-ok">▮</b> ON TIME</span><span><b class="pm-late">▯</b> LATE</span>
+          <span><b class="pm-lost">✕</b> LOST</span><span><b class="pm-wait">·</b> IN FLIGHT</span>
+        </div>
+      </div>
+
+      <div id="l-charts" hidden>
+        <div class="sect" id="l-rtt-label">Latency · ms by second</div>
+        <div class="bars" id="l-rtt-bars"></div>
+        <div id="l-lost-block">
+          <div class="sect" id="l-lost-label">Lost · packets by second</div>
+          <div class="bars" id="l-lost-bars"></div>
+        </div>
+        <p class="note" id="l-when"></p>
+      </div>
+
+      <div id="l-run" hidden>
+        <div class="boot compact" aria-live="polite">
+          <div class="boot-bar"><div class="boot-fill" id="l-boot-fill"></div></div>
+          <div class="boot-pct" id="l-boot-pct">0% — CONNECTING</div>
+          <div class="boot-tail" id="l-boot-lines"></div>
+        </div>
+      </div>
+
+      <button class="action" id="l-run-btn">▶ RUN LOSS TEST</button>
+
       <div class="sect">Profile</div>
       <div class="switch" id="l-presets"></div>
 
@@ -105,37 +148,6 @@
         <label class="field"><span>PRE-WAIT · S NOT RECORDED</span><input type="number" inputmode="numeric" data-setting="loss.preWaitS"></label>
       </div>
       <p class="note" id="l-estimate"></p>
-
-      <div id="l-run" hidden>
-        <div class="boot compact" aria-live="polite">
-          <div id="l-boot-lines"></div>
-          <div class="boot-bar"><div class="boot-fill" id="l-boot-fill"></div></div>
-          <div class="boot-pct" id="l-boot-pct">0% — CONNECTING</div>
-        </div>
-        <div class="tiles" id="l-live-tiles"></div>
-      </div>
-
-      <div id="l-result" hidden>
-        <div class="sect">Result</div>
-        <div class="tiles" id="l-tiles"></div>
-        <div class="sect" id="l-rtt-label">Latency · ms by second</div>
-        <div class="bars" id="l-rtt-bars"></div>
-        <div id="l-lost-block">
-          <div class="sect" id="l-lost-label">Lost · packets by second</div>
-          <div class="bars" id="l-lost-bars"></div>
-        </div>
-      </div>
-
-      <div id="l-map-block" hidden>
-        <div class="sect">Packet map · one glyph per packet</div>
-        <div class="pmap" id="l-map" role="img" aria-label="Packet map"></div>
-        <div class="legend">
-          <span><b class="pm-ok">▮</b> ON TIME</span><span><b class="pm-late">▯</b> LATE</span>
-          <span><b class="pm-lost">✕</b> LOST</span><span><b class="pm-wait">·</b> IN FLIGHT</span>
-        </div>
-      </div>
-
-      <button class="action" id="l-run-btn">▶ RUN LOSS TEST</button>
     </section>
 
     <!-- ── HISTORY ──────────────────────────────────────────────────────── -->
@@ -212,10 +224,11 @@
   <div class="toasts" id="toasts" aria-live="assertive"></div>
 
   <nav class="nav" aria-label="Screens">
-    <a href="#test" data-view="test">Test</a>
-    <a href="#loss" data-view="loss">Loss</a>
-    <a href="#history" data-view="history">History</a>
-    <a href="#settings" data-view="settings">Settings</a>
+    <!-- Buttons, not links: a long-pressed link in the Android WebView starts a URL drag. -->
+    <button type="button" data-view="test">Test</button>
+    <button type="button" data-view="loss">Loss</button>
+    <button type="button" data-view="history">History</button>
+    <button type="button" data-view="settings">Settings</button>
   </nav>
 </div>
 <div class="crt" id="crt" aria-hidden="true"></div>

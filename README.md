@@ -1,6 +1,6 @@
 # Terminal Speedtest
 
-A terminal-inspired speed and packet-loss test for the web and Android, built with plain HTML5. It measures against **your own server**, so every number comes from a real test, and you can tune every parameter.
+A terminal-inspired speed and packet-loss test for the web and Android, built with plain HTML5. It measures against **your own server**, or against [M-Lab](https://www.measurementlab.net/)'s public servers worldwide for speed only. Every number comes from a real test, and you can tune every parameter.
 
 - **Speed test:** latency, jitter, download and upload over parallel HTTP streams, with per-second charts, a stability score and a quality grade.
 - **Packet-loss test:** UDP-like packets over a WebRTC data channel (unordered, no retransmits), in the style of packetlosstest.com. It reports upload loss, download loss and total loss, late packets, latency (average, min, p95, max) and jitter, and draws a map with one glyph per packet.
@@ -9,6 +9,14 @@ A terminal-inspired speed and packet-loss test for the web and Android, built wi
 - **Private by default:** no analytics and no accounts. History and settings stay on the device (history saving can be switched off).
 
 Inspired by [laggy.uk](https://laggy.uk/) and [packetlosstest.com](https://packetlosstest.com/).
+
+## Public servers (M-Lab)
+
+The server list always includes **M-Lab · nearest**. It uses M-Lab's free, open [NDT7](https://github.com/m-lab/ndt-server/blob/main/spec/ndt7-protocol.md) platform: about 500 servers worldwide, with the nearest one picked automatically. No account or API key is needed.
+
+- **Measures:** download and upload, one TCP stream each way for 10 seconds. Latency is the server's TCP minimum round-trip time.
+- **Does not measure:** packet loss, jitter or stability, because M-Lab has no packet echo. Those need your own server.
+- **Privacy:** M-Lab [publishes every result as open data](https://www.measurementlab.net/privacy/), including your IP address. The app asks once before the first M-Lab test.
 
 ## Quick start
 
@@ -88,7 +96,7 @@ cd android && ./gradlew assembleDebug
 
 The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. You can also run `npx cap open android` and build or run the app from Android Studio.
 
-The app has no built-in server. On first start, open **Settings → Servers** and add your server's address (for example `http://192.168.1.10:8080`). Plain `http://` addresses are allowed so that LAN servers work; prefer `https://` for public servers.
+Out of the box the app can test against M-Lab (speed only). For packet loss, open **Settings → Servers** and add your own server's address (for example `http://192.168.1.10:8080`). Plain `http://` addresses are allowed so that LAN servers work; prefer `https://` for public servers.
 
 After changing anything in `web/`, run `npx cap sync android` again.
 
@@ -100,6 +108,7 @@ web/                    The app: index.html, css/, js/ (no build step)
   js/app.js             Screens, test runs, rendering
   js/measure.js         Latency, download, upload
   js/loss.js            WebRTC packet-loss test
+  js/ndt7.js            M-Lab NDT7 speed test (public servers)
   js/settings.js        Defaults, ranges, presets, persistence
   js/grade.js           Grade, stability and verdict rules
   js/history.js         Local result history
