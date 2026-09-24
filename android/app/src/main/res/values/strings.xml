@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Terminal Speedtest</string>
+    <string name="title_activity_main">Terminal Speedtest</string>
+    <string name="package_name">io.github.emmalegrottaglie.termspeed</string>
+    <string name="custom_url_scheme">io.github.emmalegrottaglie.termspeed</string>
+</resources>

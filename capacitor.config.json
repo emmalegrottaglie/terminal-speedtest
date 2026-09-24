@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.emmalegrottaglie.termspeed",
+  "appName": "Terminal Speedtest",
+  "webDir": "web",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#050805"
+  }
+}

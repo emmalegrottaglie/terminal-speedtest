@@ -1,0 +1,258 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Terminal design system — web edition
+   Extracted from the WeatherTerminal app (React Native). Values match the app
+   one-for-one; see DESIGN_GUIDE.md for the rules behind them.
+
+   Three independent axes, set as attributes on <html>:
+     data-palette = "term-phosphor" | "term-amber" | "term-navy" | "term-light"
+     data-accents = "uniform" | "duotone" | "broadcast" (default, no attribute)
+     data-font    = "jetbrains" (default) | "plex" | "space"
+
+   Load the fonts once in <head>:
+   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Palettes ──────────────────────────────────────────────────────────────
+   a1 = chrome (bands, hero value, prompt, active nav, primary chip)
+   a2 = data (section labels, chart bars, secondary columns, status line)
+   a3 = highlights (confidence/quality band, peak bar, deltas, callouts) */
+:root,
+[data-palette="term-phosphor"] {
+  --term-bg: #050805; --term-card: #0d120d; --term-ink: #c8ffd2; --term-muted: #5c8c68;
+  --term-line: rgba(51,255,102,.18); --term-faint: rgba(51,255,102,.08);
+  --a1: #33ff66; --a2: #7fd8ff; --a3: #ffd84d;
+  --crt-chrome-opacity: 1;
+}
+[data-palette="term-amber"] {
+  --term-bg: #0a0805; --term-card: #120e08; --term-ink: #ffe4b0; --term-muted: #9c7a48;
+  --term-line: rgba(255,176,32,.2); --term-faint: rgba(255,176,32,.09);
+  --a1: #ffb020; --a2: #ff5a4f; --a3: #fff2b8;
+}
+[data-palette="term-navy"] {
+  --term-bg: #0b1030; --term-card: #111844; --term-ink: #eaf0ff; --term-muted: #8fa0d8;
+  --term-line: rgba(34,224,255,.24); --term-faint: rgba(34,224,255,.1);
+  --a1: #ff3ea5; --a2: #22e0ff; --a3: #ffd84d;
+}
+[data-palette="term-light"] {
+  --term-bg: #f1eee2; --term-card: #e7e3d4; --term-ink: #14170f; --term-muted: #5a6050;
+  --term-line: rgba(20,23,15,.24); --term-faint: rgba(20,23,15,.1);
+  --a1: #1a7030; --a2: #0a5f7d; --a3: #8f4e00;
+  --crt-chrome-opacity: .34; /* paper ground: texture pulled right back */
+}
+
+/* ── Accent sets (applied after palettes so they win) ─────────────────────── */
+[data-accents="uniform"] { --a2: var(--a1); --a3: var(--a1); }
+[data-accents="duotone"] { --a3: var(--a1); }
+
+/* ── Type ──────────────────────────────────────────────────────────────── */
+:root, [data-font="jetbrains"] { --font: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+[data-font="plex"]  { --font: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+[data-font="space"] { --font: 'Space Mono', ui-monospace, Menlo, monospace; }
+
+/* ── Chrome + motion tokens ────────────────────────────────────────────── */
+:root {
+  --gutter: 18px;
+  --brk-size: 13px;
+  --brk-width: 1px;
+  --led-size: 9px;
+  --tick-filled: "||||||||";
+  --sweep-duration: 5.5s;
+  --boot-step: 120ms;
+  --cursor-blink: 1.1s;
+  --glow-hero: 0 0 22px color-mix(in srgb, var(--a1) 42%, transparent);
+  --glow-label: 0 0 11px color-mix(in srgb, var(--a1) 40%, transparent);
+  --glow-led: 0 0 8px var(--a1);
+  --crt-scanline: repeating-linear-gradient(180deg, rgba(0,0,0,.26) 0 1px, transparent 1px 3px);
+  --crt-vignette: radial-gradient(120% 78% at 50% 42%, transparent 44%, rgba(0,0,0,.6) 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --sweep-duration: 0s; --boot-step: 0ms; --cursor-blink: 0s; }
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; border-radius: 0; }
+html, body { margin: 0; background: var(--term-bg); color: var(--term-ink); }
+body {
+  font-family: var(--font);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 1px solid var(--a1); outline-offset: 2px; }
+
+/* Optional CRT overlay: put <div class="crt" aria-hidden="true"></div> last in <body>. */
+.crt {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+  background: var(--crt-scanline), var(--crt-vignette);
+  opacity: var(--crt-chrome-opacity);
+}
+
+/* ── Header band + sub row ─────────────────────────────────────────────── */
+.band {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 11px var(--gutter);
+  background: var(--a1); color: var(--term-bg);
+  font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+}
+.sub {
+  display: flex; justify-content: space-between;
+  padding: 11px var(--gutter);
+  border-bottom: 1px solid var(--term-line);
+  color: var(--term-muted); font-size: 9px; letter-spacing: .2em; text-transform: uppercase;
+}
+
+/* ── Prompt line with blinking cursor ──────────────────────────────────── */
+.prompt { padding: 14px var(--gutter) 0; color: var(--a1); font-size: 11px; font-weight: 700; letter-spacing: .1em; }
+.prompt::before { content: "❯ "; }
+.prompt::after { content: "▮"; animation: blink var(--cursor-blink) steps(1, end) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Hero readout ──────────────────────────────────────────────────────── */
+.hero { padding: 10px var(--gutter) 18px; }
+.hero-value {
+  color: var(--a1); font-size: 92px; line-height: 78px; font-weight: 800; letter-spacing: -.055em;
+  text-shadow: var(--glow-hero);
+}
+.hero-unit { font-size: .38em; letter-spacing: 0; margin-left: .12em; }
+.hero-status { margin-top: 15px; color: var(--a2); font-size: 16px; font-weight: 800; letter-spacing: .26em; text-transform: uppercase; }
+.hero-status::before { content: "// "; }
+.hero-meta { margin-top: 9px; color: var(--term-muted); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+
+/* ── Section label ─────────────────────────────────────────────────────── */
+.sect { padding: 15px var(--gutter) 9px; color: var(--a2); font-size: 10px; font-weight: 800; letter-spacing: .3em; text-transform: uppercase; }
+.sect::before { content: "// "; }
+
+/* ── Chips ─────────────────────────────────────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--gutter); }
+.chip {
+  display: inline-block; padding: 7px 9px; border: 1px solid var(--a1);
+  background: var(--a1); color: var(--term-bg);
+  font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+}
+.chip.two   { background: var(--a2); border-color: var(--a2); }
+.chip.three { background: var(--a3); border-color: var(--a3); }
+.chip.ghost { background: transparent; color: var(--a1); border-color: var(--term-line); }
+
+/* ── Tile grid (hairline cells) ────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 var(--gutter); }
+.tiles.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.tile { padding: 11px 10px; border-right: 1px solid var(--term-line); border-bottom: 1px solid var(--term-line); min-width: 0; }
+.tiles > .tile:nth-child(3n) { border-right: 0; }
+.tiles.cols-2 > .tile:nth-child(3n) { border-right: 1px solid var(--term-line); }
+.tiles.cols-2 > .tile:nth-child(2n) { border-right: 0; }
+.tile-value { color: var(--term-ink); font-size: 18px; font-weight: 800; }
+.tile-value.hl { color: var(--a3); }
+.tile-label { margin-top: 7px; color: var(--term-muted); font-size: 8px; letter-spacing: .2em; text-transform: uppercase; }
+.tile-sub { margin-top: 4px; color: var(--a2); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
+
+/* ── Labeled bar chart: value above, axis label below, peak in a3 ──────── */
+.bars { display: flex; gap: 3px; padding: 0 var(--gutter); margin-bottom: 12px; }
+.bar { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bar-value { text-align: center; margin-bottom: 4px; color: var(--term-ink); font-size: 9px; font-weight: 700; white-space: nowrap; }
+.bar-track { height: 72px; display: flex; align-items: flex-end; }
+.bar-fill {
+  width: 100%; height: var(--pct, 50%);
+  background: color-mix(in srgb, var(--a2) 30%, transparent);
+  border-top: 2px solid var(--a2);
+  transition: height .3s steps(6, end);
+}
+.bar-label { text-align: center; margin-top: 5px; color: var(--term-muted); font-size: 8px; letter-spacing: .06em; white-space: nowrap; }
+.bar.peak .bar-value { color: var(--a3); }
+.bar.peak .bar-fill { background: color-mix(in srgb, var(--a3) 55%, transparent); border-top-color: var(--a3); }
+
+/* ── Data table (header + rows, fixed first columns) ───────────────────── */
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--term-faint); white-space: nowrap; }
+.table th:first-child, .table td:first-child { padding-left: var(--gutter); }
+.table th { color: var(--term-muted); font-size: 8px; font-weight: 800; letter-spacing: .15em; border-bottom-color: var(--term-line); }
+.table td { font-size: 11px; letter-spacing: .05em; }
+.table .t-key   { color: var(--term-muted); width: 46px; }
+.table .t-value { color: var(--term-ink); font-weight: 800; width: 42px; }
+.table .t-data  { color: var(--a2); }
+.table .t-data::before  { content: "● "; }
+.table .t-delta { color: var(--a3); }
+.table .t-delta::before { content: "○ "; }
+
+/* ── Quality band (the app's confidence band) ──────────────────────────── */
+.qband {
+  display: flex; align-items: center; gap: 9px; margin: 20px var(--gutter) 0; padding: 11px 12px;
+  background: var(--a3); color: var(--term-bg);
+}
+.qband-label { font-size: 10px; font-weight: 800; letter-spacing: .18em; }
+.qband-ticks { font-size: 13px; letter-spacing: -.04em; }
+.qband-action { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
+
+/* ── LED status square ─────────────────────────────────────────────────── */
+.led { display: inline-block; width: var(--led-size); height: var(--led-size); background: var(--a1); box-shadow: var(--glow-led); vertical-align: middle; }
+.led.off { background: transparent; box-shadow: none; outline: 1px solid var(--term-muted); outline-offset: -1px; }
+
+/* ── Corner brackets: add .brk to a positioned box ─────────────────────── */
+.brk { position: relative; }
+.brk::before, .brk::after {
+  content: ""; position: absolute; width: var(--brk-size); height: var(--brk-size);
+  border: 0 solid var(--a1); pointer-events: none;
+}
+.brk::before { top: -6px; left: -6px; border-top-width: var(--brk-width); border-left-width: var(--brk-width); }
+.brk::after  { bottom: -6px; right: -6px; border-bottom-width: var(--brk-width); border-right-width: var(--brk-width); }
+
+/* ── Radar scope (rings + crosshair + rotating 30° sweep) ──────────────── */
+.scope { position: relative; aspect-ratio: 1; width: min(100% - 2 * var(--gutter), 280px); margin: 16px auto; }
+.scope-ring { position: absolute; border: 1px solid color-mix(in srgb, var(--a1) 22%, transparent); border-radius: 50%; }
+.scope-ring:nth-child(1) { inset: 0; }
+.scope-ring:nth-child(2) { inset: 17%; }
+.scope-ring:nth-child(3) { inset: 34%; }
+.scope-sweep {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, color-mix(in srgb, var(--a1) 40%, transparent) 0 30deg, transparent 30deg);
+  /* closest-side makes 100% = the ring's radius, so the arc sits on the outer ring */
+  -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px), #000 calc(100% - 1px), transparent 100%);
+          mask: radial-gradient(circle closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px), #000 calc(100% - 1px), transparent 100%);
+  animation: sweep var(--sweep-duration) linear infinite;
+}
+@keyframes sweep { to { transform: rotate(360deg); } }
+.scope-center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+
+/* ── Boot sequence (loading state) ─────────────────────────────────────── */
+.boot { padding: 40px var(--gutter); }
+.boot-line { color: var(--term-muted); font-size: 12px; letter-spacing: .08em; line-height: 25px; }
+.boot-line.cmd { color: var(--a1); }
+.boot-line .ok { color: var(--a2); }
+.boot-bar { position: relative; height: 5px; margin-top: 20px; background: var(--term-faint); }
+.boot-fill { position: absolute; inset: 0 auto 0 0; width: var(--pct, 0%); background: var(--a1); transition: width .2s steps(4, end); }
+.boot-pct { margin-top: 9px; color: var(--term-muted); font-size: 9px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast {
+  display: flex; align-items: center; gap: 10px; max-width: 90%; padding: 11px 14px;
+  background: var(--term-card); border: 1px solid var(--a3); color: var(--term-ink);
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+}
+
+/* ── Footer sign-off ───────────────────────────────────────────────────── */
+.end {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
+  padding: 12px var(--gutter); color: var(--term-muted); font-size: 9px; letter-spacing: .2em; text-transform: uppercase;
+}
+
+/* ── Primary action (big terminal button) ──────────────────────────────── */
+.action {
+  display: block; width: calc(100% - 2 * var(--gutter)); margin: 18px var(--gutter); padding: 14px;
+  border: 1px solid var(--a1); color: var(--a1); text-align: center;
+  font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
+}
+.action:active { background: var(--a1); color: var(--term-bg); }
+@media (hover: hover) { .action:hover { background: var(--a1); color: var(--term-bg); } }
+.action:disabled, .action:disabled:hover { opacity: .4; background: transparent; color: var(--a1); cursor: default; }
+
+/* ── Bottom nav ────────────────────────────────────────────────────────── */
+.nav {
+  position: sticky; bottom: 0; display: flex; background: var(--term-bg);
+  border-top: 1px solid var(--term-line);
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+}
+.nav a {
+  flex: 1; text-align: center; text-decoration: none; color: var(--term-muted);
+  font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+}
+.nav a[aria-current="page"] { color: var(--a1); }

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en" data-palette="term-phosphor">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Terminal-style speed and packet-loss test against your own server.">
+<title>Terminal Speedtest</title>
+<script>
+  // Apply the saved theme before first paint so the page never flashes the default palette.
+  try {
+    const d = JSON.parse(localStorage.getItem('termspeed.settings.v1'))?.display || {};
+    const html = document.documentElement;
+    if (d.palette) html.dataset.palette = d.palette;
+    if (d.accents && d.accents !== 'broadcast') html.dataset.accents = d.accents;
+    if (d.font) html.dataset.font = d.font;
+  } catch (e) { /* first run or storage blocked */ }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="css/terminal.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="band"><span id="band-title">// SPEEDTEST</span><span id="state">● IDLE</span></div>
+    <div class="sub"><span id="sub-left">NO SERVER</span><span id="sub-right">—</span></div>
+    <div class="prompt" id="prompt">speedtest --help</div>
+  </header>
+
+  <main>
+    <!-- ── TEST ─────────────────────────────────────────────────────────── -->
+    <section id="view-test" class="view" data-title="// SPEEDTEST">
+      <div id="t-idle" class="boot compact">
+        <div class="boot-line cmd">❯ awaiting command</div>
+        <div class="boot-line">no result yet · press run test</div>
+      </div>
+
+      <div id="t-run" hidden>
+        <div class="boot compact" aria-live="polite">
+          <div id="t-boot-lines"></div>
+          <div class="boot-bar"><div class="boot-fill" id="t-boot-fill"></div></div>
+          <div class="boot-pct" id="t-boot-pct">0% — CONNECTING</div>
+        </div>
+        <div class="scope brk" aria-label="Live measurement">
+          <div class="scope-ring"></div><div class="scope-ring"></div><div class="scope-ring"></div>
+          <div class="scope-sweep"></div>
+          <div class="scope-center"><div><div class="scope-readout" id="t-live">—</div><div class="scope-unit" id="t-live-unit">WAITING</div></div></div>
+        </div>
+        <div class="sect" id="t-live-label" hidden>Live</div>
+        <div class="bars" id="t-live-bars"></div>
+      </div>
+
+      <div id="t-result" hidden>
+        <div class="hero">
+          <div class="hero-value" id="r-hero">—</div>
+          <div class="hero-status" id="r-status">—</div>
+          <div class="hero-meta" id="r-meta">—</div>
+        </div>
+        <div class="chips" id="r-chips"></div>
+
+        <div class="sect">Connection</div>
+        <div class="tiles" id="r-tiles"></div>
+
+        <div id="r-down-block">
+          <div class="sect" id="r-down-label">Download · Mbps by second</div>
+          <div class="bars" id="r-down-bars"></div>
+        </div>
+        <div id="r-up-block">
+          <div class="sect" id="r-up-label">Upload · Mbps by second</div>
+          <div class="bars" id="r-up-bars"></div>
+        </div>
+
+        <div class="qband" id="r-qband">
+          <span class="qband-label" id="r-q-label">STABILITY —</span>
+          <span class="qband-ticks" id="r-q-ticks">········</span>
+          <button class="qband-action" id="r-why" aria-expanded="false" aria-controls="r-why-panel">WHY?&gt;</button>
+        </div>
+        <div class="why" id="r-why-panel" hidden></div>
+        <p class="note" id="r-when"></p>
+      </div>
+
+      <div class="sect">Phases</div>
+      <div class="switch">
+        <button class="chip" data-toggle="speed.runDownload">DOWNLOAD</button>
+        <button class="chip" data-toggle="speed.runUpload">UPLOAD</button>
+        <button class="chip" data-toggle="speed.runLoss">PACKET LOSS</button>
+      </div>
+      <button class="action" id="t-run-btn">▶ RUN TEST</button>
+    </section>
+
+    <!-- ── PACKET LOSS ──────────────────────────────────────────────────── -->
+    <section id="view-loss" class="view" data-title="// PACKET LOSS" hidden>
+      <div class="sect">Profile</div>
+      <div class="switch" id="l-presets"></div>
+
+      <div class="sect">Parameters</div>
+      <div class="fields">
+        <label class="field"><span>PACKET SIZE · BYTES</span><input type="number" inputmode="numeric" data-setting="loss.packetSize"></label>
+        <label class="field"><span>RATE · PACKETS / S</span><input type="number" inputmode="numeric" data-setting="loss.rate"></label>
+        <label class="field"><span>DURATION · S</span><input type="number" inputmode="numeric" data-setting="loss.durationS"></label>
+        <label class="field"><span>LATE AFTER · MS</span><input type="number" inputmode="numeric" data-setting="loss.lateMs"></label>
+        <label class="field"><span>PRE-WAIT · S NOT RECORDED</span><input type="number" inputmode="numeric" data-setting="loss.preWaitS"></label>
+      </div>
+      <p class="note" id="l-estimate"></p>
+
+      <div id="l-run" hidden>
+        <div class="boot compact" aria-live="polite">
+          <div id="l-boot-lines"></div>
+          <div class="boot-bar"><div class="boot-fill" id="l-boot-fill"></div></div>
+          <div class="boot-pct" id="l-boot-pct">0% — CONNECTING</div>
+        </div>
+        <div class="tiles" id="l-live-tiles"></div>
+      </div>
+
+      <div id="l-result" hidden>
+        <div class="sect">Result</div>
+        <div class="tiles" id="l-tiles"></div>
+        <div class="sect" id="l-rtt-label">Latency · ms by second</div>
+        <div class="bars" id="l-rtt-bars"></div>
+        <div id="l-lost-block">
+          <div class="sect" id="l-lost-label">Lost · packets by second</div>
+          <div class="bars" id="l-lost-bars"></div>
+        </div>
+      </div>
+
+      <div id="l-map-block" hidden>
+        <div class="sect">Packet map · one glyph per packet</div>
+        <div class="pmap" id="l-map" role="img" aria-label="Packet map"></div>
+        <div class="legend">
+          <span><b class="pm-ok">▮</b> ON TIME</span><span><b class="pm-late">▯</b> LATE</span>
+          <span><b class="pm-lost">✕</b> LOST</span><span><b class="pm-wait">·</b> IN FLIGHT</span>
+        </div>
+      </div>
+
+      <button class="action" id="l-run-btn">▶ RUN LOSS TEST</button>
+    </section>
+
+    <!-- ── HISTORY ──────────────────────────────────────────────────────── -->
+    <section id="view-history" class="view" data-title="// HISTORY" hidden>
+      <div class="sect">Results · newest first</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>DATE · TIME</th><th>TYPE</th><th>DOWN</th><th>UP</th><th>PING</th><th>LOSS</th><th>GRADE</th></tr></thead>
+          <tbody id="h-rows"></tbody>
+        </table>
+      </div>
+      <p class="note">DOWN / UP IN MBPS · PING IN MS · LOSS IN %. STORED ON THIS DEVICE ONLY.</p>
+      <button class="action" id="h-clear">✕ CLEAR HISTORY</button>
+    </section>
+
+    <!-- ── SETTINGS ─────────────────────────────────────────────────────── -->
+    <section id="view-settings" class="view" data-title="// SETTINGS" hidden>
+      <div class="sect">Servers</div>
+      <div id="s-servers"></div>
+      <form class="add-server" id="s-add">
+        <input type="url" id="s-add-url" placeholder="http://192.168.1.10:8080" aria-label="Server address" autocomplete="off" spellcheck="false">
+        <button class="chip" type="submit">+ ADD</button>
+      </form>
+      <p class="note">RUN <code>npm start</code> ON ANY MACHINE TO HOST A SERVER. SEE README.</p>
+
+      <div class="sect">Speed test</div>
+      <div class="fields">
+        <label class="field"><span>PING SAMPLES</span><input type="number" inputmode="numeric" data-setting="speed.pingSamples"></label>
+        <label class="field"><span>PHASE DURATION · S</span><input type="number" inputmode="numeric" data-setting="speed.durationS"></label>
+        <label class="field"><span>WARM-UP EXCLUDED · S</span><input type="number" inputmode="numeric" data-setting="speed.warmupS"></label>
+        <label class="field"><span>PARALLEL STREAMS</span><input type="number" inputmode="numeric" data-setting="speed.streams"></label>
+        <label class="field"><span>DOWNLOAD REQUEST · MB</span><input type="number" inputmode="numeric" data-setting="speed.chunkMB"></label>
+        <label class="field"><span>UPLOAD REQUEST · MB</span><input type="number" inputmode="numeric" data-setting="speed.uploadChunkMB"></label>
+      </div>
+      <p class="note">THE FULL TEST'S PACKET-LOSS PHASE USES THE PARAMETERS ON THE LOSS SCREEN.</p>
+
+      <div class="sect">Palette</div>
+      <div class="switch" data-axis="palette">
+        <button class="chip" data-v="term-phosphor">PHOSPHOR</button>
+        <button class="chip" data-v="term-amber">AMBER</button>
+        <button class="chip" data-v="term-navy">BROADCAST 8S</button>
+        <button class="chip" data-v="term-light">LIGHT</button>
+      </div>
+      <div class="sect">Accent set</div>
+      <div class="switch" data-axis="accents">
+        <button class="chip" data-v="uniform">UNIFORM</button>
+        <button class="chip" data-v="duotone">DUOTONE</button>
+        <button class="chip" data-v="broadcast">BROADCAST</button>
+      </div>
+      <div class="sect">Typeface</div>
+      <div class="switch" data-axis="font">
+        <button class="chip" data-v="jetbrains">JETBRAINS</button>
+        <button class="chip" data-v="plex">PLEX</button>
+        <button class="chip" data-v="space">SPACE</button>
+      </div>
+      <div class="sect">Screen</div>
+      <div class="switch">
+        <button class="chip" data-toggle="display.crt">CRT SCANLINES</button>
+        <button class="chip ghost" id="s-scale-down" aria-label="Smaller text">A−</button>
+        <span class="chip ghost" id="s-scale">100%</span>
+        <button class="chip ghost" id="s-scale-up" aria-label="Larger text">A+</button>
+      </div>
+      <div class="sect">Privacy</div>
+      <div class="switch">
+        <button class="chip" data-toggle="history.save">SAVE HISTORY ON DEVICE</button>
+      </div>
+      <p class="note">NO ANALYTICS. RESULTS AND SETTINGS NEVER LEAVE THIS DEVICE; TESTS TALK ONLY TO THE SELECTED SERVER.</p>
+
+      <button class="action" id="s-reset">↺ RESET SETTINGS</button>
+    </section>
+  </main>
+
+  <div class="end"><span>END TRANSMISSION — <span id="clock">--:--</span></span><span id="end-right">TERMSPEED V0.1</span></div>
+  <div class="toasts" id="toasts" aria-live="assertive"></div>
+
+  <nav class="nav" aria-label="Screens">
+    <a href="#test" data-view="test">Test</a>
+    <a href="#loss" data-view="loss">Loss</a>
+    <a href="#history" data-view="history">History</a>
+    <a href="#settings" data-view="settings">Settings</a>
+  </nav>
+</div>
+<div class="crt" id="crt" aria-hidden="true"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-palette="term-phosphor">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terminal Speed Test — Specimen</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="terminal.css">
+<style>
+  /* Specimen-only layout: a phone-width column and the axis switchers. */
+  body { max-width: 440px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+  main { flex: 1; }
+  .switch { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--gutter) 6px; }
+  .switch button.chip:not([aria-pressed="true"]) { background: transparent; color: var(--a1); border-color: var(--term-line); }
+  .demo-note { padding: 0 var(--gutter); color: var(--term-muted); font-size: 8px; letter-spacing: .2em; }
+  .scope-readout { color: var(--a1); font-size: 44px; font-weight: 800; letter-spacing: -.04em; text-shadow: var(--glow-hero); line-height: 1; }
+  .scope-unit { color: var(--term-muted); font-size: 9px; letter-spacing: .2em; margin-top: 6px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="band"><span>// SPEEDTEST</span><span id="state">● IDLE</span></div>
+  <div class="sub"><span>SERVER MADRID, ES</span><span>DEMO DATA · NOT A REAL TEST</span></div>
+  <div class="prompt">speedtest --run --server mad-01</div>
+
+  <section id="boot" class="boot" hidden aria-live="polite">
+    <div class="boot-line cmd">❯ speedtest --run</div>
+    <div id="boot-lines"></div>
+    <div class="boot-bar"><div class="boot-fill" id="boot-fill"></div></div>
+    <div class="boot-pct" id="boot-pct">0% — CONNECTING</div>
+  </section>
+
+  <section id="result">
+    <div class="scope brk" aria-label="Live throughput">
+      <div class="scope-ring"></div><div class="scope-ring"></div><div class="scope-ring"></div>
+      <div class="scope-sweep"></div>
+      <div class="scope-center"><div><div class="scope-readout" id="live">412</div><div class="scope-unit">MBPS DOWN</div></div></div>
+    </div>
+
+    <div class="hero">
+      <div class="hero-value">412<span class="hero-unit">MBPS</span></div>
+      <div class="hero-status">FAST · STABLE</div>
+      <div class="hero-meta">UPLOAD 38 MBPS · PING 12 MS</div>
+    </div>
+
+    <div class="chips">
+      <span class="chip">IPV4</span><span class="chip two">MULTI-STREAM</span><span class="chip ghost">WIFI 6</span>
+    </div>
+
+    <div class="sect">Connection</div>
+    <div class="tiles">
+      <div class="tile"><div class="tile-value hl">12</div><div class="tile-label">MS PING</div><div class="tile-sub">EXCELLENT</div></div>
+      <div class="tile"><div class="tile-value">3</div><div class="tile-label">MS JITTER</div></div>
+      <div class="tile"><div class="tile-value">0.0%</div><div class="tile-label">PACKET LOSS</div></div>
+      <div class="tile"><div class="tile-value">412</div><div class="tile-label">MBPS DOWN</div></div>
+      <div class="tile"><div class="tile-value">38</div><div class="tile-label">MBPS UP</div></div>
+      <div class="tile"><div class="tile-value hl">A+</div><div class="tile-label">GRADE</div></div>
+    </div>
+
+    <div class="sect">Download · Mbps by second</div>
+    <div class="bars" id="bars"></div>
+
+    <div class="qband">
+      <span class="qband-label">STABILITY 92%</span>
+      <span class="qband-ticks">|||||||·</span>
+      <button class="qband-action">WHY?&gt;</button>
+    </div>
+
+    <div class="sect">History</div>
+    <table class="table">
+      <thead><tr><th>TIME</th><th>DOWN</th><th>UP</th><th>PING</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">NOW</td><td class="t-value">412</td><td class="t-data">38</td><td class="t-delta">12 MS</td></tr>
+        <tr><td class="t-key">18:02</td><td class="t-value">398</td><td class="t-data">36</td><td class="t-delta">14 MS</td></tr>
+        <tr><td class="t-key">09:47</td><td class="t-value">355</td><td class="t-data">35</td><td class="t-delta">19 MS</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <button class="action" id="run">▶ RUN TEST</button>
+
+  <div class="sect">Palette</div>
+  <div class="switch" data-axis="palette">
+    <button class="chip" data-v="term-phosphor" aria-pressed="true">PHOSPHOR</button>
+    <button class="chip" data-v="term-amber">AMBER</button>
+    <button class="chip" data-v="term-navy">BROADCAST 8S</button>
+    <button class="chip" data-v="term-light">LIGHT</button>
+  </div>
+  <div class="sect">Accent set</div>
+  <div class="switch" data-axis="accents">
+    <button class="chip" data-v="uniform">UNIFORM</button>
+    <button class="chip" data-v="duotone">DUOTONE</button>
+    <button class="chip" data-v="broadcast" aria-pressed="true">BROADCAST</button>
+  </div>
+  <div class="sect">Typeface</div>
+  <div class="switch" data-axis="font">
+    <button class="chip" data-v="jetbrains" aria-pressed="true">JETBRAINS</button>
+    <button class="chip" data-v="plex">PLEX</button>
+    <button class="chip" data-v="space">SPACE</button>
+  </div>
+  <p class="demo-note">ALL NUMBERS ON THIS PAGE ARE SIMULATED FOR THE SPECIMEN.</p>
+
+  <div class="end"><span>END TRANSMISSION — <span id="clock">--:--</span></span><span>SPEC V1</span></div>
+</main>
+
+<nav class="nav">
+  <a href="#" aria-current="page">Test</a><a href="#">History</a><a href="#">Servers</a><a href="#">Settings</a>
+</nav>
+<div class="crt" aria-hidden="true"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, '0');
+  const now = new Date();
+  $('clock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  function renderBars(values) {
+    const lo = Math.min(...values), hi = Math.max(...values), span = hi - lo || 1;
+    const peak = values.indexOf(hi);
+    $('bars').innerHTML = values.map((v, i) => {
+      const pct = 12 + ((v - lo) / span) * 88;
+      return `<div class="bar${i === peak ? ' peak' : ''}">
+        <div class="bar-value">${v}</div>
+        <div class="bar-track"><div class="bar-fill" style="--pct:${pct}%"></div></div>
+        <div class="bar-label">${i + 1}S</div></div>`;
+    }).join('');
+  }
+  renderBars([188, 301, 377, 402, 419, 424, 411, 406, 415, 412]);
+
+  // Axis switchers — the same three attributes the app persists.
+  document.querySelectorAll('.switch').forEach((group) => {
+    group.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const axis = group.dataset.axis;
+      if (axis === 'accents' && btn.dataset.v === 'broadcast') document.documentElement.removeAttribute('data-accents');
+      else document.documentElement.setAttribute(`data-${axis}`, btn.dataset.v);
+      group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+
+  // Simulated run: boot lines reveal one by one, then the result swaps in.
+  const steps = ['resolving server', 'measuring latency', 'download · 10 s', 'upload · 10 s'];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('run').addEventListener('click', () => {
+    $('result').hidden = true; $('boot').hidden = false; $('run').disabled = true;
+    $('state').textContent = '● TESTING';
+    $('boot-lines').innerHTML = '';
+    let i = 0;
+    const tick = () => {
+      if (i > 0) $('boot-lines').lastElementChild.insertAdjacentHTML('beforeend', ' <span class="ok">[ OK ]</span>');
+      if (i < steps.length) {
+        $('boot-lines').insertAdjacentHTML('beforeend', `<div class="boot-line">${steps[i]}</div>`);
+        const pct = Math.round(((i + 1) / steps.length) * 100);
+        $('boot-fill').style.setProperty('--pct', pct + '%');
+        $('boot-pct').textContent = `${pct}% — ${steps[i].toUpperCase()}`;
+        i++; setTimeout(tick, reduced ? 0 : 700);
+      } else {
+        $('boot').hidden = true; $('result').hidden = false; $('run').disabled = false;
+        $('state').textContent = '● LIVE';
+      }
+    };
+    tick();
+  });
+</script>
+</body>
+</html>
