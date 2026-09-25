@@ -1,6 +1,6 @@
 {
   "name": "terminal-speedtest",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Terminal-inspired speed and packet-loss test for web and Android (HTML5 + Capacitor), with a self-hosted Node measurement server.",
   "type": "module",
   "private": true,

@@ -7,7 +7,7 @@ import { fetchInfo, measureLatency, measureDownload, measureUpload } from './mea
 import { runLossTest, lossEstimate } from './loss.js';
 
 const $ = (id) => document.getElementById(id);
-const VERSION = '0.2';
+const VERSION = '0.2.1';
 const MAX_BARS = 12;
 const VIEWS = ['test', 'loss', 'history', 'settings'];
 
