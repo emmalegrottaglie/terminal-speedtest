@@ -74,7 +74,7 @@ export async function measureLatency(base, samples, { signal, onSample } = {}) {
 // Counts bytes over a timed phase. Per-second buckets feed the bar chart, a one-second
 // sliding window feeds the live readout, and the result excludes the warm-up seconds
 // (TCP slow start) from the average.
-export class Meter {
+class Meter {
   constructor(warmupMs) {
     this.warmupMs = warmupMs;
     this.t0 = performance.now();

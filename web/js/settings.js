@@ -28,19 +28,14 @@ export const LOSS_PRESETS = [
   { id: 'stress',  label: 'STRESS',      packetSize: 1200, rate: 250, durationS: 30, lateMs: 300 },
 ];
 
-// M-Lab's public NDT7 platform is a built-in entry in the server list (see ndt7.js).
-export const MLAB_URL = 'mlab:nearest';
-export const isMlab = (server) => server?.url === MLAB_URL;
-
 function isNative() {
   return Boolean(window.Capacitor?.isNativePlatform?.());
 }
 
-// When the page is served by the measurement server itself, that server is the default;
-// M-Lab is always available as the last entry.
+// When the page is served by the measurement server itself, that server is the default.
 function defaultServers() {
-  const own = isNative() || !/^https?:$/.test(location.protocol) ? [] : [{ url: location.origin }];
-  return [...own, { url: MLAB_URL }];
+  if (isNative() || !/^https?:$/.test(location.protocol)) return [];
+  return [{ url: location.origin }];
 }
 
 export function defaults() {
@@ -55,7 +50,6 @@ export function defaults() {
     loss: { preset: p.id, packetSize: p.packetSize, rate: p.rate, durationS: p.durationS, lateMs: p.lateMs, preWaitS: 2 },
     display: { palette: 'term-phosphor', accents: 'broadcast', font: 'jetbrains', crt: true, scale: 1 },
     history: { save: true },
-    privacy: { mlabConsent: false },
   };
 }
 
@@ -70,7 +64,7 @@ export function clampSetting(path, value) {
 function sanitize(stored) {
   const out = defaults();
   if (!stored || typeof stored !== 'object') return out;
-  for (const group of ['speed', 'loss', 'display', 'history', 'privacy']) {
+  for (const group of ['speed', 'loss', 'display', 'history']) {
     for (const key of Object.keys(out[group])) {
       const v = stored[group]?.[key];
       if (v === undefined) continue;
@@ -84,9 +78,9 @@ function sanitize(stored) {
     }
   }
   if (Array.isArray(stored.servers)) {
-    const own = stored.servers.map((s) => normalizeServerUrl(s?.url)).filter(Boolean).map((url) => ({ url }));
-    // Settings saved before M-Lab existed get it appended; it cannot be removed.
-    out.servers = [...own, { url: MLAB_URL }];
+    // Entries that are not http(s) URLs, such as v0.2.0's built-in "mlab:nearest", are dropped.
+    const servers = stored.servers.map((s) => normalizeServerUrl(s?.url)).filter(Boolean).map((url) => ({ url }));
+    if (servers.length || !out.servers.length) out.servers = servers;
   }
   const idx = Number(stored.activeServer);
   out.activeServer = Number.isInteger(idx) && idx >= 0 && idx < out.servers.length ? idx : 0;
