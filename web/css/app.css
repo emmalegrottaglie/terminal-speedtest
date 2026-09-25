@@ -136,3 +136,6 @@ button, .nav, .band, .chip, .switch, .legend {
 button.chip:not(:disabled):active { background: var(--a1); border-color: var(--a1); color: var(--term-bg); }
 .qband-action:active { background: var(--term-bg); color: var(--a3); }
 
+
+/* Armed destructive action (see confirmTap in app.js): filled in the highlight colour */
+.action.armed, .action.armed:hover { background: var(--a3); border-color: var(--a3); color: var(--term-bg); }

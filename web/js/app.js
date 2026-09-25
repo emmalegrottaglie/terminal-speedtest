@@ -71,6 +71,31 @@ function toast(message, kind = 'err') {
   setTimeout(() => el.remove(), 5000);
 }
 
+// Two-tap confirmation inside the console instead of a native dialog: the first tap arms
+// the button and swaps its label for the question; a second tap within 4 s runs the action.
+// Waiting, or moving focus away, disarms it.
+function confirmTap(button, question, action) {
+  const label = button.textContent;
+  let timer = null;
+  const disarm = () => {
+    clearTimeout(timer);
+    timer = null;
+    button.classList.remove('armed');
+    button.textContent = label;
+  };
+  button.addEventListener('click', () => {
+    if (!timer) {
+      button.classList.add('armed');
+      button.textContent = question;
+      timer = setTimeout(disarm, 4000);
+      return;
+    }
+    disarm();
+    action();
+  });
+  button.addEventListener('blur', disarm);
+}
+
 // ── Header, footer, navigation ────────────────────────────────────────────
 function promptFor(v) {
   const s = server();
@@ -779,16 +804,14 @@ function bind() {
     }
   });
 
-  $('h-clear').addEventListener('click', () => {
-    if (!confirm('Delete all saved results from this device?')) return;
+  confirmTap($('h-clear'), '⚠ TAP AGAIN TO DELETE ALL RESULTS', () => {
     H.clear();
     renderHistory();
     renderIdle();
   });
 
-  $('s-reset').addEventListener('click', () => {
+  confirmTap($('s-reset'), '⚠ TAP AGAIN TO RESET SETTINGS + SERVERS', () => {
     if (running) { toast('WAIT FOR THE RUNNING TEST TO FINISH'); return; }
-    if (!confirm('Reset all settings, including the server list?')) return;
     settings = S.reset();
     S.save(settings);
     applyDisplay();
