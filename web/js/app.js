@@ -162,6 +162,7 @@ function applyDisplay() {
   $('crt').hidden = !d.crt;
   $('app').style.zoom = d.scale === 1 ? '' : String(d.scale);
   $('s-scale').textContent = `${Math.round(d.scale * 100)}%`;
+  fitHistory();
   document.querySelectorAll('.switch[data-axis]').forEach((group) => {
     const value = d[group.dataset.axis];
     group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === value)));
@@ -652,16 +653,30 @@ function renderIdle() {
 
 function renderHistory() {
   const items = H.list();
-  $('h-rows').innerHTML = items.length ? items.map((e) => `<tr>
-      <td class="t-key">${esc(stamp(new Date(e.at)))}</td>
-      <td class="t-type">${{ loss: 'LOSS', mlab: 'M-LAB' }[e.kind] || 'FULL'}</td>
-      <td class="t-num">${esc(fmtMbps(e.down))}</td>
-      <td class="t-data">${esc(fmtMbps(e.up))}</td>
-      <td class="t-delta">${esc(fmtMs(e.ping))}</td>
-      <td class="t-num">${esc(fmtPct(e.loss))}</td>
-      <td>${gradeChip(e.grade)}</td></tr>`).join('')
+  // data-label names each value when the table falls back to stacked rows (fitHistory).
+  $('h-rows').innerHTML = items.length ? items.map((e) => {
+    const d = new Date(e.at);
+    return `<tr>
+      <td class="t-key h-when"><span>${pad(d.getDate())}.${pad(d.getMonth() + 1)}</span> <span>${clock(d)}</span></td>
+      <td class="t-type h-type">${{ loss: 'LOSS', mlab: 'M-LAB' }[e.kind] || 'FULL'}</td>
+      <td class="t-num" data-label="MBPS DOWN">${esc(fmtMbps(e.down))}</td>
+      <td class="t-data" data-label="MBPS UP">${esc(fmtMbps(e.up))}</td>
+      <td class="t-delta" data-label="MS PING">${esc(fmtMs(e.ping))}</td>
+      <td class="t-num" data-label="% LOSS">${esc(fmtPct(e.loss))}</td>
+      <td class="h-grade">${gradeChip(e.grade)}</td></tr>`;
+  }).join('')
     : '<tr class="empty"><td colspan="7">NO RESULTS YET</td></tr>';
   $('h-clear').disabled = !items.length;
+  fitHistory();
+}
+
+// The history table must never scroll sideways. When its columns do not fit (narrow phone,
+// large text size or system font scaling), rows switch to a stacked two-line layout.
+function fitHistory() {
+  const wrap = $('h-wrap');
+  if (wrap.offsetParent === null) return;
+  wrap.classList.remove('stacked');
+  wrap.classList.toggle('stacked', wrap.scrollWidth > wrap.clientWidth);
 }
 
 function renderPresets() {
@@ -701,15 +716,18 @@ function renderServers() {
     return `<div class="server">
       <span class="led${st?.ok ? '' : ' off'}" aria-label="${st?.ok ? 'online' : 'offline or unchecked'}"></span>
       <div class="server-main"><div class="server-name">${esc(name)}</div><div class="server-url">${esc(s.url)}</div></div>
-      <button class="chip${active ? '' : ' ghost'}" data-use="${i}" aria-pressed="${active}">${active ? 'IN USE' : 'USE'}</button>
-      <button class="chip ghost" data-check="${i}">CHECK</button>
-      <button class="chip ghost" data-remove="${i}" aria-label="Remove server">✕</button></div>`;
+      <div class="server-actions">
+        <button class="chip${active ? '' : ' ghost'}" data-use="${i}" aria-pressed="${active}">${active ? 'IN USE' : 'USE'}</button>
+        <button class="chip ghost" data-check="${i}">CHECK</button>
+        <button class="chip ghost" data-remove="${i}" aria-label="Remove server">✕</button>
+      </div></div>`;
   }).join('');
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────
 function bind() {
   window.addEventListener('hashchange', route);
+  new ResizeObserver(fitHistory).observe($('h-wrap'));
   document.querySelector('.nav').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-view]');
     if (b) location.hash = `#${b.dataset.view}`;

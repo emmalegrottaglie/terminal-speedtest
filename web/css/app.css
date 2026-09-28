@@ -63,11 +63,13 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .note code { font: inherit; color: var(--a1); text-transform: none; }
 
 /* Server list rows */
+/* The actions drop below the address when both do not fit, so the URL never breaks mid-port. */
 .server {
-  display: flex; align-items: center; gap: 10px; margin: 0 var(--gutter);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 var(--gutter);
   padding: 9px 0; border-bottom: 1px solid var(--term-faint);
 }
-.server-main { flex: 1; min-width: 0; }
+.server-main { flex: 1 1 0; min-width: min(100%, 26ch); }
+.server-actions { display: flex; gap: 6px; margin-left: auto; }
 .server-name { color: var(--term-ink); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .server-url { margin-top: 3px; color: var(--term-muted); font-size: 9px; letter-spacing: .04em; overflow-wrap: anywhere; }
 .server .chip { padding: 5px 7px; }
@@ -103,7 +105,33 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .grade[data-g="F"]  { background: #ff6b6b; }
 .tile-value .grade { font-size: 16px; }
 
-.table-wrap { overflow-x: auto; }
+/* History: date over time keeps the table narrow; .stacked (set by fitHistory in app.js)
+   turns each row into two lines when even that does not fit. */
+.table-wrap { overflow-x: hidden; }
+.htable th, .htable td { padding-left: 5px; padding-right: 5px; }
+.htable th:first-child, .htable td:first-child { padding-left: var(--gutter); }
+.htable th:last-child, .htable td:last-child { padding-right: var(--gutter); }
+.htable .h-when span { display: block; }
+.htable .h-when span + span { color: var(--term-ink); }
+
+.stacked .htable, .stacked .htable tbody { display: block; }
+.stacked .htable thead { display: none; }
+.stacked .htable tr {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; align-items: center;
+  padding: 9px var(--gutter); border-bottom: 1px solid var(--term-faint);
+}
+.stacked .htable td { padding: 0; border: 0; white-space: nowrap; }
+/* Line 1: when, type, grade. Line 2: the four measured values. */
+.stacked .htable .h-when { grid-row: 1; grid-column: 1 / 3; }
+.stacked .htable .h-when span { display: inline; }
+.stacked .htable .h-type { grid-row: 1; grid-column: 3; }
+.stacked .htable .h-grade { grid-row: 1; grid-column: 4; text-align: right; }
+.stacked .htable td[data-label] { grid-row: 2; }
+.stacked .htable td[data-label]::after {
+  content: attr(data-label); display: block; margin-top: 3px;
+  color: var(--term-muted); font-size: 7px; font-weight: 500; letter-spacing: .16em;
+}
+.stacked .htable .empty { display: block; }
 .table td.t-type { color: var(--term-muted); font-size: 9px; letter-spacing: .12em; }
 .table td.t-num { color: var(--term-ink); font-weight: 800; }
 .table .empty td { color: var(--term-muted); font-size: 10px; letter-spacing: .12em; padding-top: 14px; padding-bottom: 14px; }
