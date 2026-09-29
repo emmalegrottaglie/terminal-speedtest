@@ -40,8 +40,12 @@ function defaultServers() {
 
 export function defaults() {
   const p = LOSS_PRESETS[0];
+  const servers = defaultServers();
   return {
-    servers: defaultServers(),
+    // AUTO: test against the nearest server from the public list (serverlist.js). When the
+    // page comes from a measurement server, that server is the default instead.
+    auto: servers.length === 0,
+    servers,
     activeServer: 0,
     speed: {
       pingSamples: 20, durationS: 10, warmupS: 1, streams: 4, chunkMB: 25, uploadChunkMB: 8,
@@ -82,6 +86,9 @@ function sanitize(stored) {
     const servers = stored.servers.map((s) => normalizeServerUrl(s?.url)).filter(Boolean).map((url) => ({ url }));
     if (servers.length || !out.servers.length) out.servers = servers;
   }
+  // Settings saved before AUTO existed keep using their own servers.
+  if (typeof stored.auto === 'boolean') out.auto = stored.auto;
+  else if (out.servers.length) out.auto = false;
   const idx = Number(stored.activeServer);
   out.activeServer = Number.isInteger(idx) && idx >= 0 && idx < out.servers.length ? idx : 0;
   out.display.scale = Math.min(1.4, Math.max(0.8, Number(out.display.scale) || 1));
@@ -123,8 +130,9 @@ export function reset() {
   return defaults();
 }
 
+// The custom server in use; null in AUTO mode.
 export function activeServer(settings) {
-  return settings.servers[settings.activeServer] || null;
+  return settings.auto ? null : settings.servers[settings.activeServer] || null;
 }
 
 export function matchPreset(loss) {

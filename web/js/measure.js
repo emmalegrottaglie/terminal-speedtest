@@ -65,6 +65,14 @@ async function pingOnce(base, n, signal) {
   return precise ?? wall;
 }
 
+// Lowest round trip over a few pings after a warm-up, for choosing the nearest server.
+export async function probeLatency(base, samples, signal) {
+  await pingOnce(base, 'probe', signal);
+  let best = Infinity;
+  for (let i = 0; i < samples; i++) best = Math.min(best, await pingOnce(base, `probe${i}`, signal));
+  return best;
+}
+
 export async function measureLatency(base, samples, { signal, onSample } = {}) {
   // The timing buffer holds 250 entries by default; earlier tests may have filled it.
   try { performance.clearResourceTimings(); } catch { /* ignore */ }
