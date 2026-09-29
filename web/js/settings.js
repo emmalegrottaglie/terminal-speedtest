@@ -45,7 +45,7 @@ export function defaults() {
     activeServer: 0,
     speed: {
       pingSamples: 20, durationS: 10, warmupS: 1, streams: 4, chunkMB: 25, uploadChunkMB: 8,
-      runDownload: true, runUpload: true, runLoss: true,
+      adaptive: true, runDownload: true, runUpload: true, runLoss: true,
     },
     loss: { preset: p.id, packetSize: p.packetSize, rate: p.rate, durationS: p.durationS, lateMs: p.lateMs, preWaitS: 2 },
     display: { palette: 'term-phosphor', accents: 'broadcast', font: 'jetbrains', crt: true, scale: 1 },

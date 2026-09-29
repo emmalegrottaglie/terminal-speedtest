@@ -83,7 +83,8 @@ Several people behind one NAT (a household, a carrier-grade NAT) share one budge
 
 - **Ping:** the median of N sequential HTTP requests (default 20), timed with Resource Timing from request start to the first response byte. A warm-up request opens the connection first and is not counted.
 - **Jitter:** the mean absolute difference between consecutive samples.
-- **Download and upload:** parallel streams (default 4) for a fixed time (default 10 s). The first warm-up seconds (default 1) are excluded from the average, to discount TCP slow start. The charts show every second, including warm-up. Upload uses `XMLHttpRequest` progress events, because `fetch` has no portable upload progress.
+- **Download and upload:** parallel streams (default 4) for up to the phase duration (default 10 s). The first warm-up seconds (default 1) are excluded from the average, to discount TCP slow start. The charts show every second, including warm-up. Upload uses `XMLHttpRequest` progress events, because `fetch` has no portable upload progress.
+- **Stop when stable** (on by default): after at least 4 s, and at least 3 s past the warm-up, a phase ends once every one-second rate sampled over the last 2 s is within 10% of the others, or once it has moved 400 MB. This roughly halves the data a test uses, for the user and for the server. The result says when and why a phase stopped early. Switch it off in **Settings → Speed test** to always run the full phase duration.
 - **Packet loss:** each packet carries a sequence number and a send timestamp. The server echoes every packet and counts the ones it received. From that:
   - upload loss = sent − reached server
   - download loss = reached server − came back
