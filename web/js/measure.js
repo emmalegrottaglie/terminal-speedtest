@@ -4,6 +4,15 @@ function abortError() {
   return new DOMException('Test aborted', 'AbortError');
 }
 
+// The server explains refusals (hourly limit, busy) in a JSON body; surface that text.
+function refusal(what, status, body) {
+  try {
+    const msg = JSON.parse(body)?.error;
+    if (msg) return new Error(msg);
+  } catch { /* not JSON */ }
+  return new Error(`${what} refused (${status})`);
+}
+
 export async function fetchInfo(base, signal) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
@@ -149,7 +158,7 @@ export function measureDownload(base, opts) {
         if (stop.aborted) return;
         throw new Error('download stream failed');
       }
-      if (!res.ok || !res.body) throw new Error(`download refused (${res.status})`);
+      if (!res.ok || !res.body) throw refusal('download', res.status, await res.text().catch(() => ''));
       const reader = res.body.getReader();
       try {
         for (;;) {
@@ -183,7 +192,7 @@ export function measureUpload(base, opts) {
       xhr = new XMLHttpRequest();
       xhr.upload.onprogress = (e) => { meter.add(e.loaded - sent); sent = e.loaded; };
       xhr.onload = () => {
-        if (xhr.status !== 200) return reject(new Error(`upload refused (${xhr.status})`));
+        if (xhr.status !== 200) return reject(refusal('upload', xhr.status, xhr.responseText));
         meter.add(blob.size - sent);
         next();
       };

@@ -1,13 +1,13 @@
 // Terminal Speedtest measurement server.
 //
 // One process serves the web client and the measurement API:
-//   GET  /api/info          server identity + the client's IP as seen here
+//   GET  /api/info          server identity, the client's IP as seen here, and whether it is busy
 //   GET  /api/ping          empty response for HTTP round-trip timing
-//   GET  /api/down?bytes=N  N bytes of incompressible data
-//   POST /api/up            discards the request body, reports bytes received
+//   GET  /api/down?bytes=N  N bytes of incompressible data (at most 100 MB per request)
+//   POST /api/up            discards the request body (at most 64 MB), reports bytes received
 //   POST /api/rtc/offer     WebRTC signalling (non-trickle) for the packet-loss test
 //
-// Configuration is by environment variable; see README.md.
+// Per-client limits live in limits.js. Configuration is by environment variable; see README.md.
 
 import http from 'node:http';
 import { randomFillSync } from 'node:crypto';
@@ -15,6 +15,7 @@ import { createReadStream, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLossSession, sessionCount } from './rtc.js';
+import { clientAddress, clientKey, admitStream, admitLossSession, isBusy } from './limits.js';
 
 const env = process.env;
 const PORT = Number(env.PORT) || 8080;
@@ -22,8 +23,9 @@ const HOST = env.HOST || '0.0.0.0';
 const SERVER_NAME = env.SERVER_NAME || 'local-01';
 const SERVER_LOCATION = env.SERVER_LOCATION || 'SELF-HOSTED';
 const WEB_ROOT = path.resolve(env.WEB_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web'));
-const MAX_DOWN_BYTES = 1024 * 1024 * 1024; // per request
-const MAX_UP_BYTES = 1024 * 1024 * 1024;   // per request
+// Per request. The client loops over requests, so these bound one request, not a test.
+const MAX_DOWN_BYTES = 100 * 1024 * 1024;
+const MAX_UP_BYTES = 64 * 1024 * 1024;
 const MAX_OFFER_BYTES = 64 * 1024;
 const VERSION = '0.2.1';
 
@@ -64,14 +66,18 @@ function send(res, status, body, headers = {}) {
   res.end(data);
 }
 
-function clientIp(req) {
-  const ip = req.socket.remoteAddress || '';
-  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+// Answers a request that limits.js turned away. The connection is closed so that a refused
+// upload does not keep streaming its body.
+function refuse(res, r) {
+  send(res, r.status, { error: r.error }, { 'Retry-After': String(r.retryAfter), Connection: 'close' });
 }
 
-function handleDown(req, res, url) {
+function handleDown(req, res, url, client) {
   const requested = Number(url.searchParams.get('bytes'));
   if (!Number.isFinite(requested) || requested <= 0) return send(res, 400, { error: 'bytes must be a positive number' });
+  const stream = admitStream(client);
+  if (stream.error) return refuse(res, stream);
+  res.on('close', stream.end);
   const total = Math.min(Math.floor(requested), MAX_DOWN_BYTES);
   res.writeHead(200, { ...CORS, ...NO_STORE, 'Content-Type': 'application/octet-stream', 'Content-Length': total });
   let left = total;
@@ -79,6 +85,7 @@ function handleDown(req, res, url) {
     while (left > 0) {
       const n = Math.min(left, NOISE.length);
       left -= n;
+      stream.use(n);
       if (!res.write(n === NOISE.length ? NOISE : NOISE.subarray(0, n))) return res.once('drain', pump);
     }
     res.end();
@@ -87,11 +94,15 @@ function handleDown(req, res, url) {
   pump();
 }
 
-function handleUp(req, res) {
+function handleUp(req, res, client) {
+  const stream = admitStream(client);
+  if (stream.error) return refuse(res, stream);
+  res.on('close', stream.end);
   let received = 0;
   const started = process.hrtime.bigint();
   req.on('data', (chunk) => {
     received += chunk.length;
+    stream.use(chunk.length);
     if (received > MAX_UP_BYTES) {
       send(res, 413, { error: 'upload too large' });
       req.destroy();
@@ -117,7 +128,7 @@ function readBody(req, limit) {
   });
 }
 
-async function handleOffer(req, res) {
+async function handleOffer(req, res, client) {
   let offer;
   try {
     offer = JSON.parse(await readBody(req, MAX_OFFER_BYTES));
@@ -125,9 +136,12 @@ async function handleOffer(req, res) {
     return send(res, 400, { error: 'invalid offer' });
   }
   if (offer?.type !== 'offer' || typeof offer.sdp !== 'string') return send(res, 400, { error: 'invalid offer' });
+  const session = admitLossSession(client);
+  if (session.error) return refuse(res, session);
   try {
-    send(res, 200, await createLossSession(offer.sdp));
+    send(res, 200, await createLossSession(offer.sdp, { onClose: session.end }));
   } catch (err) {
+    session.end();
     send(res, 503, { error: err.message });
   }
 }
@@ -153,6 +167,8 @@ function serveStatic(req, res, url) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const route = `${req.method} ${url.pathname}`;
+  const ip = clientAddress(req);
+  const client = clientKey(ip);
 
   if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
     res.writeHead(204, CORS);
@@ -163,17 +179,17 @@ const server = http.createServer((req, res) => {
     case 'GET /api/info':
       return send(res, 200, {
         name: SERVER_NAME, location: SERVER_LOCATION, version: VERSION,
-        ip: clientIp(req), lossSessions: sessionCount(),
+        ip, lossSessions: sessionCount(), busy: isBusy(client),
       });
     case 'GET /api/ping':
       res.writeHead(204, { ...CORS, ...NO_STORE });
       return res.end();
     case 'GET /api/down':
-      return handleDown(req, res, url);
+      return handleDown(req, res, url, client);
     case 'POST /api/up':
-      return handleUp(req, res);
+      return handleUp(req, res, client);
     case 'POST /api/rtc/offer':
-      return handleOffer(req, res);
+      return handleOffer(req, res, client);
   }
 
   if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'unknown endpoint' });
