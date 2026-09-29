@@ -7,6 +7,7 @@ A terminal-inspired speed and packet-loss test for the web and Android, built wi
 - **Tunable:** packet size, packet rate, duration, late threshold and pre-wait, plus traffic presets (FPS 64/128 Hz, VoIP, video call, stress). The speed test's phase duration, warm-up, streams, request sizes and ping samples are adjustable too.
 - **Looks like a console:** four palettes, three accent sets, three typefaces, CRT scanlines and text scaling. The rules are in [`terminal-design-guide/`](terminal-design-guide/DESIGN_GUIDE.md).
 - **Private by default:** no analytics and no accounts. History and settings stay on the device (history saving can be switched off).
+- **Finds a server for you:** in AUTO mode the app pings every server on the signed public server list and tests against the nearest one that answers. Your own servers work alongside it.
 
 Inspired by [laggy.uk](https://laggy.uk/) and [packetlosstest.com](https://packetlosstest.com/).
 
@@ -71,6 +72,35 @@ The API is intentionally open (CORS `*`) so that the Android app and other origi
 
 Several people behind one NAT (a household, a carrier-grade NAT) share one budget. The limits are in memory only; client addresses are never logged or written to disk.
 
+## Public servers (AUTO mode)
+
+In AUTO mode the app picks the nearest server from a public list, instead of a server you entered yourself.
+
+- **Where the list lives:** `web/servers.json`. The app ships with a copy and, in AUTO mode, fetches the current one from this repository at most once a day, so servers can be added without an app update.
+- **Signing:** the list is signed with Ed25519. The app uses a downloaded list only when all of these hold:
+  - its signature matches the public key in `web/js/serverlist.js`
+  - it has not expired (lists are valid for a year)
+  - it is not older than the list the app already has
+- **Picking a server:** the app pings every server on the list in parallel (3 pings each, after a warm-up) and ranks them by the lowest round trip. At test time it uses the nearest server that answers and does not report `busy`, and falls back to the next one otherwise. The ranking is refreshed when it is older than 10 minutes, or with **RESCAN**.
+- **Privacy:** in AUTO mode the app contacts GitHub (for the list) and every server on the list (for the pings). Outside AUTO mode it contacts neither.
+
+To add a server to the list:
+
+1. Deploy it with [`deploy/`](deploy/README.md) and check `https://<name>/api/info`.
+2. Add it to `servers/list.json`. Each entry needs an `id`, an `https://` origin with no path, and a `location`:
+
+   ```json
+   { "servers": [ { "id": "fra-01", "url": "https://fra-01.example.org", "location": "NUREMBERG, DE" } ] }
+   ```
+
+3. Sign the list, then commit and push `web/servers.json`:
+
+   ```bash
+   node tools/sign-servers.mjs
+   ```
+
+The signing key is created once with `node tools/sign-servers.mjs keygen`. It is stored outside the repository at `~/.termspeed/servers-ed25519.pem`, or at the path in `TERMSPEED_SIGNING_KEY`. Keep a backup, and never commit it: anyone with the key can publish a list the app trusts. If the key is lost or leaked, generate a new one, put its public key in `web/js/serverlist.js`, and ship an app update.
+
 ## API
 
 | Endpoint | Purpose |
@@ -106,7 +136,7 @@ cd android && ./gradlew assembleDebug
 
 The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. You can also run `npx cap open android` and build or run the app from Android Studio.
 
-The app has no built-in server. On first start, open **Settings → Servers** and add your server's address (for example `http://192.168.1.10:8080`). Plain `http://` addresses are allowed so that LAN servers work; prefer `https://` for public servers.
+On first start the app is in AUTO mode and uses the nearest public server. To use your own server, open **Settings → Servers** and add its address (for example `http://192.168.1.10:8080`). Plain `http://` addresses are allowed so that LAN servers work; prefer `https://` for public servers.
 
 After changing anything in `web/`, run `npx cap sync android` again.
 
@@ -121,8 +151,12 @@ web/                    The app: index.html, css/, js/ (no build step)
   js/settings.js        Defaults, ranges, presets, persistence
   js/grade.js           Grade, stability and verdict rules
   js/history.js         Local result history
+  js/serverlist.js      Signed public server list, nearest-server ranking
+  servers.json          Signed public server list (generated)
   css/terminal.css      Design-system stylesheet (copy of terminal-design-guide/terminal.css)
   css/app.css           App-specific components
+servers/list.json       Public server list, before signing
+tools/sign-servers.mjs  Creates the signing key and signs the server list
 android/                Capacitor Android project
 deploy/                 Public server: install script, Docker Compose, Caddy
 terminal-design-guide/  The design system: rules, tokens, specimen

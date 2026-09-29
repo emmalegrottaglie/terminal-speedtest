@@ -5,6 +5,7 @@ import * as H from './history.js';
 import * as G from './grade.js';
 import { fetchInfo, measureLatency, measureDownload, measureUpload, ADAPTIVE } from './measure.js';
 import { runLossTest, lossEstimate } from './loss.js';
+import * as L from './serverlist.js';
 
 const $ = (id) => document.getElementById(id);
 const VERSION = '0.2.1';
@@ -16,6 +17,11 @@ let view = 'test';
 let running = null;              // { kind: 'full' | 'loss', ctrl: AbortController }
 const serverStatus = new Map();  // url -> { ok, info, error }
 let wakeLock = null;
+let publicList = null;           // the trusted public server list (serverlist.js), or null
+let ranked = [];                 // its servers that answered, nearest first
+let rankedAt = 0;
+let ranking = null;              // the rescan in progress, if any
+const RANK_MAX_AGE_MS = 10 * 60_000;
 
 // ── Formatting ────────────────────────────────────────────────────────────
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -53,8 +59,10 @@ function setPath(path, value) {
   settings[g][k] = value;
   S.save(settings);
 }
+// The server tests run against: in AUTO mode the nearest public server, otherwise the
+// custom server in use. Null when there is none.
 function server() {
-  return S.activeServer(settings);
+  return settings.auto ? ranked[0] || null : S.activeServer(settings);
 }
 function serverLabel(url) {
   const st = serverStatus.get(url);
@@ -104,7 +112,7 @@ function promptFor(v) {
   const sp = settings.speed, l = settings.loss;
   switch (v) {
     case 'test': {
-      const flags = [`--server ${name}`, `--streams ${sp.streams}`, `--time ${sp.durationS}s`];
+      const flags = [`--server ${settings.auto ? 'auto' : name}`, `--streams ${sp.streams}`, `--time ${sp.durationS}s`];
       if (sp.adaptive) flags.push('--stop-when-stable');
       if (!sp.runDownload) flags.push('--no-download');
       if (!sp.runUpload) flags.push('--no-upload');
@@ -112,7 +120,7 @@ function promptFor(v) {
       return `speedtest --run ${flags.join(' ')}`;
     }
     case 'loss':
-      return `losstest --server ${name} --size ${l.packetSize} --rate ${l.rate} --time ${l.durationS}s --late ${l.lateMs}ms --prewait ${l.preWaitS}s`;
+      return `losstest --server ${settings.auto ? 'auto' : name} --size ${l.packetSize} --rate ${l.rate} --time ${l.durationS}s --late ${l.lateMs}ms --prewait ${l.preWaitS}s`;
     case 'history':
       return `history --list --limit 100`;
     default:
@@ -132,7 +140,7 @@ function renderHeader() {
   else if (st?.ok) state = '● READY';
   $('state').textContent = state;
 
-  $('sub-left').textContent = s ? `SERVER ${serverLabel(s.url)}` : 'NO SERVER CONFIGURED';
+  $('sub-left').textContent = s ? `SERVER ${serverLabel(s.url)}${settings.auto ? ' · AUTO' : ''}` : 'NO SERVER CONFIGURED';
   const ip = st?.info?.ip;
   $('sub-right').textContent = ip ? `${ip.includes(':') ? 'IPV6' : 'IPV4'} ${ip}` : (st && !st.ok ? 'UNREACHABLE' : DASH);
   if (!running) $('prompt').textContent = promptFor(view);
@@ -291,11 +299,38 @@ function setRunning(kind, ctrl) {
 }
 
 function requireServer() {
-  const s = server();
-  if (s) return s;
-  toast('ADD A SERVER IN SETTINGS FIRST');
+  if (settings.auto ? publicList?.servers.length : server()) return true;
+  if (settings.auto && !publicList && ranking) { toast('LOADING THE SERVER LIST · TRY AGAIN', 'info'); return false; }
+  toast(settings.auto ? 'NO PUBLIC SERVERS YET · ADD YOUR OWN IN SETTINGS' : 'ADD A SERVER IN SETTINGS FIRST');
   location.hash = '#settings';
-  return null;
+  return false;
+}
+
+// Connects a test to its server. In AUTO mode the public servers are pinged again if the
+// last ranking is old, then the nearest one that answers and isn't busy is used.
+async function openServer(signal) {
+  if (!settings.auto) {
+    const s = server();
+    const info = await fetchInfo(s.url, signal);
+    serverStatus.set(s.url, { ok: true, info });
+    return { url: s.url, info };
+  }
+  if (!ranked.length || Date.now() - rankedAt > RANK_MAX_AGE_MS) await rescan(signal);
+  let lastError = new Error('no public server answered');
+  for (const c of ranked) {
+    try {
+      const info = await fetchInfo(c.url, signal);
+      serverStatus.set(c.url, { ok: true, info });
+      if (info.busy) { lastError = new Error('the nearest servers are busy, try again shortly'); continue; }
+      ranked = [c, ...ranked.filter((x) => x !== c)];
+      return { url: c.url, info };
+    } catch (err) {
+      if (signal.aborted) throw err;
+      serverStatus.set(c.url, { ok: false, error: err.message });
+      lastError = err;
+    }
+  }
+  throw lastError;
 }
 
 function explainError(err, base) {
@@ -355,8 +390,8 @@ function lossHooks(boot, cfg, progress, onRtt) {
 
 async function runFull() {
   if (running?.kind === 'full') { running.ctrl.abort(); return; }
-  const s = requireServer();
-  if (!s) return;
+  if (!requireServer()) return;
+  let base = server()?.url || '';
   const ctrl = new AbortController();
   const { signal } = ctrl;
   const sp = { ...settings.speed };
@@ -397,15 +432,15 @@ async function runFull() {
 
   try {
     progress.begin('info');
-    boot.step('resolving server');
-    const info = await fetchInfo(s.url, signal);
-    serverStatus.set(s.url, { ok: true, info });
+    boot.step(settings.auto ? 'finding the nearest server' : 'resolving server');
+    const { url, info } = await openServer(signal);
+    base = url;
     boot.ok(`${info.name} · ${info.location}`);
 
     progress.begin('ping');
     boot.step(`measuring latency · ${sp.pingSamples} samples`);
     const pings = [];
-    const lat = await measureLatency(s.url, sp.pingSamples, {
+    const lat = await measureLatency(base, sp.pingSamples, {
       signal,
       onSample: (rtt, i, n) => {
         pings.push(rtt);
@@ -421,14 +456,14 @@ async function runFull() {
       progress.begin('down');
       boot.step(`download · ${upTo}${sp.durationS} s · ${sp.streams} streams`);
       $('t-live-bars').innerHTML = '';
-      down = await measureDownload(s.url, phaseOpts('MBPS DOWN'));
+      down = await measureDownload(base, phaseOpts('MBPS DOWN'));
       boot.ok(phaseDone(down));
     }
     if (sp.runUpload) {
       progress.begin('up');
       boot.step(`upload · ${upTo}${sp.durationS} s · ${sp.streams} streams`);
       $('t-live-bars').innerHTML = '';
-      up = await measureUpload(s.url, phaseOpts('MBPS UP'));
+      up = await measureUpload(base, phaseOpts('MBPS UP'));
       boot.ok(phaseDone(up));
     }
     if (sp.runLoss) {
@@ -441,7 +476,7 @@ async function runFull() {
         liveBars('Latency', 'ms', perSec, fmtMs);
       });
       try {
-        loss = await runLossTest(s.url, cfg, { signal, ...tracker.hooks });
+        loss = await runLossTest(base, cfg, { signal, ...tracker.hooks });
         tracker.finish(true);
       } catch (err) {
         tracker.finish(false);
@@ -473,8 +508,8 @@ async function runFull() {
     if (err.name === 'AbortError') {
       toast('TEST ABORTED', 'info');
     } else {
-      if (!serverStatus.get(s.url)?.ok) serverStatus.set(s.url, { ok: false, error: err.message });
-      toast(explainError(err, s.url));
+      if (base && !serverStatus.get(base)?.ok) serverStatus.set(base, { ok: false, error: err.message });
+      toast(explainError(err, base));
     }
     if ($('r-hero').textContent === DASH) { renderIdle(); $('t-idle').hidden = false; } else $('t-result').hidden = false;
   } finally {
@@ -552,8 +587,8 @@ function renderFull(r) {
 
 async function runLoss() {
   if (running?.kind === 'loss') { running.ctrl.abort(); return; }
-  const s = requireServer();
-  if (!s) return;
+  if (!requireServer()) return;
+  let base = server()?.url || '';
   const ctrl = new AbortController();
   const cfg = { ...settings.loss };
   const command = promptFor('loss');
@@ -589,15 +624,15 @@ async function runLoss() {
 
   try {
     progress.begin('info');
-    boot.step('resolving server');
-    const info = await fetchInfo(s.url, ctrl.signal);
-    serverStatus.set(s.url, { ok: true, info });
+    boot.step(settings.auto ? 'finding the nearest server' : 'resolving server');
+    const { url, info } = await openServer(ctrl.signal);
+    base = url;
     boot.ok(`${info.name} · ${info.location}`);
     progress.begin('loss');
     const tracker = lossHooks(boot, cfg, (f) => progress.at(f), liveTiles);
     let summary;
     try {
-      summary = await runLossTest(s.url, cfg, { signal: ctrl.signal, ...tracker.hooks });
+      summary = await runLossTest(base, cfg, { signal: ctrl.signal, ...tracker.hooks });
       tracker.finish(true);
     } catch (err) {
       tracker.finish(false);
@@ -616,7 +651,7 @@ async function runLoss() {
   } catch (err) {
     show(false, false);
     if (err.name === 'AbortError') toast('TEST ABORTED', 'info');
-    else toast(explainError(err, s.url));
+    else toast(explainError(err, base));
   } finally {
     setRunning(null);
   }
@@ -659,7 +694,11 @@ function renderIdle() {
   } else {
     lines.push('<div class="boot-line">no result yet · press run test</div>');
   }
-  if (!server()) lines.push('<div class="boot-line">no server configured · open settings</div>');
+  if (!server() && !(settings.auto && ranking)) {
+    const why = !settings.auto ? 'no server configured'
+      : publicList?.servers.length ? 'no public server answered' : 'no public servers yet';
+    lines.push(`<div class="boot-line">${why} · open settings</div>`);
+  }
   $('t-idle').innerHTML = lines.join('');
 }
 
@@ -715,7 +754,44 @@ async function checkServer(url) {
   return serverStatus.get(url);
 }
 
+// Loads the public list and pings its servers. Runs at start-up in AUTO mode, when AUTO is
+// switched on, before a test when the ranking is old, and from RESCAN.
+function rescan(signal) {
+  ranking ??= (async () => {
+    renderServers();
+    publicList = await L.loadList();
+    ranked = await L.rankServers(publicList, signal);
+    rankedAt = Date.now();
+  })().finally(() => {
+    ranking = null;
+    renderServers();
+    renderHeader();
+    renderIdle();
+    if (settings.auto && ranked[0] && !serverStatus.get(ranked[0].url)?.info) checkServer(ranked[0].url);
+  });
+  return ranking;
+}
+
+function renderAuto() {
+  const count = publicList?.servers.length ?? 0;
+  const top = ranked[0];
+  let detail;
+  if (ranking) detail = 'PINGING PUBLIC SERVERS…';
+  else if (!publicList) detail = 'SERVER LIST NOT LOADED';
+  else if (!count) detail = 'NO PUBLIC SERVERS YET';
+  else if (!top) detail = settings.auto ? `NONE OF ${count} ANSWERED` : `${count} SERVER${count > 1 ? 'S' : ''} · NOT PINGED`;
+  else detail = `${serverLabel(top.url)} · ${fmtMs(top.rtt)} MS · ${ranked.length} OF ${count} ONLINE`;
+  $('s-auto').innerHTML = `<div class="server">
+      <span class="led${top ? '' : ' off'}" aria-label="${top ? 'online' : 'none reachable'}"></span>
+      <div class="server-main"><div class="server-name">AUTO · NEAREST PUBLIC SERVER</div><div class="server-url">${esc(detail)}</div></div>
+      <div class="server-actions">
+        <button class="chip${settings.auto ? '' : ' ghost'}" data-auto aria-pressed="${settings.auto}">${settings.auto ? 'IN USE' : 'USE'}</button>
+        <button class="chip ghost" data-rescan${ranking ? ' disabled' : ''}>RESCAN</button>
+      </div></div>`;
+}
+
 function renderServers() {
+  renderAuto();
   const list = settings.servers;
   if (!list.length) {
     $('s-servers').innerHTML = '<div class="server-empty">○ NO SERVERS · ADD ONE BELOW</div>';
@@ -723,7 +799,7 @@ function renderServers() {
   }
   $('s-servers').innerHTML = list.map((s, i) => {
     const st = serverStatus.get(s.url);
-    const active = i === settings.activeServer;
+    const active = !settings.auto && i === settings.activeServer;
     const name = st?.info ? `${st.info.name} · ${st.info.location}` : (st ? st.error : 'NOT CHECKED');
     return `<div class="server">
       <span class="led${st?.ok ? '' : ' off'}" aria-label="${st?.ok ? 'online' : 'offline or unchecked'}"></span>
@@ -800,6 +876,7 @@ function bind() {
     if (!url) { toast('ENTER A HTTP:// OR HTTPS:// ADDRESS'); return; }
     if (!settings.servers.some((s) => s.url === url)) settings.servers.push({ url });
     settings.activeServer = settings.servers.findIndex((s) => s.url === url);
+    settings.auto = false;
     S.save(settings);
     $('s-add-url').value = '';
     renderServers();
@@ -808,12 +885,29 @@ function bind() {
     toast(st.ok ? `CONNECTED · ${st.info.name}` : st.error, st.ok ? 'info' : 'err');
   });
 
+  $('s-auto').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (running) { toast('WAIT FOR THE RUNNING TEST TO FINISH'); return; }
+    if (b.dataset.auto !== undefined) {
+      settings.auto = true;
+      S.save(settings);
+      renderServers();
+      renderHeader();
+      renderIdle();
+      if (!ranked.length) rescan();
+    } else if (b.dataset.rescan !== undefined) {
+      rescan();
+    }
+  });
+
   $('s-servers').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.use !== undefined) {
       if (running) { toast('WAIT FOR THE RUNNING TEST TO FINISH'); return; }
       settings.activeServer = Number(b.dataset.use);
+      settings.auto = false;
       S.save(settings);
       renderServers();
       renderHeader();
@@ -851,8 +945,17 @@ function bind() {
     renderServers();
     renderIdle();
     renderHeader();
-    if (server()) checkServer(server().url);
+    connectInitial();
   });
+}
+
+// At start-up (and after a reset): rank the public servers in AUTO mode, otherwise check
+// the custom server. Outside AUTO mode the list is read from the app's own copy only, so
+// nothing is fetched from GitHub.
+function connectInitial() {
+  if (settings.auto) { rescan(); return; }
+  L.loadList({ refresh: false }).then((list) => { publicList = list; renderServers(); });
+  if (server()) checkServer(server().url);
 }
 
 function tickClock() {
@@ -869,7 +972,7 @@ function init() {
   route();
   tickClock();
   setInterval(tickClock, 15000);
-  if (server()) checkServer(server().url);
+  connectInitial();
 }
 
 init();
