@@ -1,0 +1,23 @@
+# TLS in front of one measurement server. DOMAIN comes from deploy/.env.
+{
+	# HTTP/1.1 only. Under HTTP/2 the app's parallel download and upload streams would
+	# share a single TCP connection, and the test would stop measuring what it claims.
+	servers {
+		protocols h1
+	}
+}
+
+{$DOMAIN} {
+	# There is no log directive on purpose: Caddy then writes no access log, so client
+	# addresses are never stored.
+
+	# The app uploads at most 64 MiB per request; the server enforces its own limit too.
+	request_body {
+		max_size 70MB
+	}
+
+	reverse_proxy 127.0.0.1:8080 {
+		# Pass bytes through as they arrive; buffering would distort the throughput.
+		flush_interval -1
+	}
+}
