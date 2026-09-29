@@ -16,6 +16,8 @@ const MAX_SESSIONS = Number(env.RTC_MAX_SESSIONS) || 32;
 const SESSION_MS = 180_000;     // hard cap on a session's lifetime
 const GATHER_MS = 5_000;        // ICE gathering deadline before answering
 const MAX_TRACKED = 250_000;    // distinct sequence numbers counted per session
+const MAX_PPS = 300;            // echoed packets per second (the app sends at most 250)
+const MAX_PACKET = 1500;        // bytes (the app sends at most 1200)
 const FLAG_WARMUP = 1;
 
 function rtcConfig() {
@@ -41,11 +43,12 @@ export function sessionCount() {
   return sessions.size;
 }
 
-export function createLossSession(offerSdp) {
+// onClose runs once when the session ends for any reason.
+export function createLossSession(offerSdp, { onClose } = {}) {
   if (sessions.size >= MAX_SESSIONS) return Promise.reject(new Error('server busy, try again shortly'));
 
   const pc = new nodeDataChannel.PeerConnection(`loss-${nextId++}`, rtcConfig());
-  const session = { pc, received: new Set(), closed: false };
+  const session = { pc, received: new Set(), closed: false, windowAt: 0, windowCount: 0 };
   sessions.add(session);
 
   const close = () => {
@@ -54,6 +57,7 @@ export function createLossSession(offerSdp) {
     sessions.delete(session);
     clearTimeout(session.timer);
     try { pc.close(); } catch { /* already closed */ }
+    onClose?.();
   };
   session.timer = setTimeout(close, SESSION_MS);
 
@@ -65,7 +69,12 @@ export function createLossSession(offerSdp) {
     const label = dc.getLabel();
     if (label === 'loss') {
       dc.onMessage((msg) => {
-        if (typeof msg === 'string' || msg.length < 13) return;
+        if (typeof msg === 'string' || msg.length < 13 || msg.length > MAX_PACKET) return;
+        // Packets beyond the rate cap are dropped, so a custom client cannot turn the echo
+        // into a high-rate traffic source.
+        const now = Date.now();
+        if (now - session.windowAt >= 1000) { session.windowAt = now; session.windowCount = 0; }
+        if (++session.windowCount > MAX_PPS) return;
         if (!(msg[0] & FLAG_WARMUP) && session.received.size < MAX_TRACKED) {
           session.received.add(msg.readUInt32LE(1));
         }

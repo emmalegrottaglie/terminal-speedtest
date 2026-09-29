@@ -8,7 +8,7 @@ export const RANGES = {
   'speed.durationS':     { min: 3,  max: 60,   step: 1 },
   'speed.warmupS':       { min: 0,  max: 5,    step: 1 },
   'speed.streams':       { min: 1,  max: 6,    step: 1 },
-  'speed.chunkMB':       { min: 1,  max: 200,  step: 1 },
+  'speed.chunkMB':       { min: 1,  max: 100,  step: 1 },  // the server caps a request at 100 MB
   'speed.uploadChunkMB': { min: 1,  max: 64,   step: 1 },
   'loss.packetSize':     { min: 16, max: 1200, step: 1 },
   'loss.rate':           { min: 1,  max: 250,  step: 1 },

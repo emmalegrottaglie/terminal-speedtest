@@ -37,6 +37,12 @@ Set these as environment variables:
 | `STUN_URL` | none | For example `stun:stun.l.google.com:19302`, so a server behind NAT can advertise its public address |
 | `RTC_MAX_SESSIONS` | `32` | Maximum number of concurrent packet-loss sessions |
 | `WEB_ROOT` | `./web` | Directory served as the web app |
+| `CLIENT_HOURLY_GB` | `8` | Data budget per client (download + upload), refilled continuously over an hour |
+| `CLIENT_MAX_STREAMS` | `8` | Parallel download/upload requests per client |
+| `MAX_ACTIVE_CLIENTS` | `3` | Clients that can run a throughput test at the same time; others get `503 server busy`. About 3 per Gbps of port speed |
+| `CLIENT_MAX_LOSS_SESSIONS` | `2` | Concurrent packet-loss sessions per client |
+
+Setting any of the `CLIENT_*` or `MAX_ACTIVE_CLIENTS` limits to `0` switches it off.
 
 Example for a public VPS:
 
@@ -52,16 +58,25 @@ A page served over HTTPS cannot call an `http://` server. For a public deploymen
 
 ### Exposure
 
-The API is intentionally open (CORS `*`) so that the Android app and other origins can use it. A public server can therefore be used by anyone as a bandwidth sink. Each request is capped at 1 GB and packet-loss sessions are capped by `RTC_MAX_SESSIONS`, but there is no per-client rate limit. If the server is public, add one at the reverse proxy.
+The API is intentionally open (CORS `*`) so that the Android app and other origins can use it. To keep a public server from being used as an unmetered bandwidth sink, the server limits each client:
+
+- A client is an IPv4 address or an IPv6 `/64`, since one subscriber usually owns a whole `/64`. Behind a reverse proxy on the same host, the address comes from the proxy's `X-Forwarded-For` header; that header is only trusted on connections from loopback. A proxy on another machine is not supported, because every client would look like the proxy.
+- Clients on the server's own network (loopback, private and link-local addresses) are not limited, so LAN tests at multi-gigabit speeds work.
+- Each client has an hourly data budget (`CLIENT_HOURLY_GB`). Once it is spent, download and upload requests get `429` with a `Retry-After` header until it refills. A 1 Gbps test at the default settings uses about 2.5 GB.
+- Only `MAX_ACTIVE_CLIENTS` clients can run a throughput test at once, so that concurrent tests don't share the port and under-report. A client keeps its slot for 5 s between the download and upload phases. Others get `503`, and `/api/info` reports `busy: true`.
+- Requests are capped at 100 MB (download) and 64 MB (upload); the app repeats requests for as long as a phase runs.
+- Packet-loss sessions are capped per client (`CLIENT_MAX_LOSS_SESSIONS`) and in total (`RTC_MAX_SESSIONS`). Each session echoes at most 300 packets per second of at most 1500 bytes.
+
+Several people behind one NAT (a household, a carrier-grade NAT) share one budget. The limits are in memory only; client addresses are never logged or written to disk.
 
 ## API
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/info` | Server name, location, version, and the client IP as the server sees it |
+| `GET /api/info` | Server name, location, version, the client IP as the server sees it, and `busy` (a new test would get `503`) |
 | `GET /api/ping` | Empty `204` response, used for round-trip timing |
-| `GET /api/down?bytes=N` | Returns N bytes of incompressible data (max 1 GB) |
-| `POST /api/up` | Discards the request body and returns `{ bytes, ms }` |
+| `GET /api/down?bytes=N` | Returns N bytes of incompressible data (max 100 MB) |
+| `POST /api/up` | Discards the request body (max 64 MB) and returns `{ bytes, ms }` |
 | `POST /api/rtc/offer` | WebRTC signalling: send an SDP offer, receive an answer |
 
 ## How the numbers are measured
