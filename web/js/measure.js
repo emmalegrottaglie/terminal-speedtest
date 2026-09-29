@@ -93,7 +93,7 @@ class Meter {
     this.totalBytes = 0;
   }
   add(bytes) {
-    if (bytes <= 0) return;
+    if (bytes <= 0 || this.endAt !== undefined) return;
     const now = performance.now();
     const elapsed = now - this.t0;
     const sec = Math.floor(elapsed / 1000);
@@ -116,22 +116,46 @@ class Meter {
     const seconds = Math.floor((endAt - this.t0) / 1000);
     const perSecond = this.buckets.slice(0, seconds).map((b) => (b * 8) / 1e6);
     while (perSecond.length < seconds) perSecond.push(0);
-    return { mbps, perSecond, bytes: this.totalBytes };
+    return { mbps, perSecond, bytes: this.totalBytes, seconds: (endAt - this.t0) / 1000 };
   }
 }
 
+// Adaptive phases stop early, to save the server's bandwidth and the user's data: once the
+// minimum time has passed, a phase ends when the one-second rate has held steady (every
+// sample in the window within `spread` of each other) or when it has moved `capBytes`.
+// The phase duration setting stays the upper limit.
+export const ADAPTIVE = { minMs: 4000, afterWarmupMs: 3000, windowMs: 2000, spread: 0.1, capBytes: 400e6 };
+
 // Runs `worker(meter, stopSignal)` on `streams` parallel loops for `durationMs`,
 // reporting the live rate every 250 ms.
-async function timedPhase({ streams, durationMs, warmupMs, signal, onTick }, worker) {
+async function timedPhase({ streams, durationMs, warmupMs, adaptive, signal, onTick }, worker) {
   if (signal?.aborted) throw abortError();
   const meter = new Meter(warmupMs);
   const stop = new AbortController();
+  let stopped = null;  // why an adaptive phase ended early: 'stable' | 'cap'
+  const end = (reason = null) => {
+    if (meter.endAt !== undefined) return;
+    meter.endAt = Math.min(performance.now(), meter.t0 + durationMs);
+    stopped = reason;
+    stop.abort();
+  };
   const onAbort = () => stop.abort();
   signal?.addEventListener('abort', onAbort);
+  const minMs = Math.min(durationMs, Math.max(ADAPTIVE.minMs, warmupMs + ADAPTIVE.afterWarmupMs));
+  const samples = [];  // [elapsedMs, mbps]
   const ticker = setInterval(() => {
-    onTick?.({ mbps: meter.liveMbps(), elapsedMs: performance.now() - meter.t0, buckets: meter.buckets });
+    const elapsedMs = performance.now() - meter.t0;
+    const mbps = meter.liveMbps();
+    onTick?.({ mbps, elapsedMs, buckets: meter.buckets });
+    if (!adaptive) return;
+    samples.push([elapsedMs, mbps]);
+    if (elapsedMs < minMs) return;
+    if (meter.totalBytes >= ADAPTIVE.capBytes) return end('cap');
+    const recent = samples.filter(([t]) => t >= elapsedMs - ADAPTIVE.windowMs).map(([, v]) => v);
+    const low = Math.min(...recent);
+    if (recent.length >= ADAPTIVE.windowMs / 250 && low > 0 && Math.max(...recent) <= low * (1 + ADAPTIVE.spread)) end('stable');
   }, 250);
-  const timer = setTimeout(() => stop.abort(), durationMs);
+  const timer = setTimeout(() => end(), durationMs);
   const errors = [];
   try {
     await Promise.all(Array.from({ length: streams }, () =>
@@ -143,7 +167,8 @@ async function timedPhase({ streams, durationMs, warmupMs, signal, onTick }, wor
   }
   if (signal?.aborted) throw abortError();
   if (errors.length) throw errors[0];
-  return meter.result(Math.min(performance.now(), meter.t0 + durationMs));
+  end();
+  return { ...meter.result(meter.endAt), stopped };
 }
 
 export function measureDownload(base, opts) {

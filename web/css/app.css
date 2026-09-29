@@ -35,6 +35,7 @@ header { position: sticky; top: 0; z-index: 10; background: var(--term-bg); padd
 .switch { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--gutter) 6px; }
 .switch button.chip[aria-pressed="false"] { background: transparent; color: var(--a1); border-color: var(--term-line); }
 button.chip:disabled { opacity: .4; cursor: default; }
+.switch-after-fields { padding-top: 10px; }
 
 /* Hero: long values (e.g. 1234.5) shrink rather than overflow */
 .hero-value { overflow-wrap: anywhere; }

@@ -3,7 +3,7 @@
 import * as S from './settings.js';
 import * as H from './history.js';
 import * as G from './grade.js';
-import { fetchInfo, measureLatency, measureDownload, measureUpload } from './measure.js';
+import { fetchInfo, measureLatency, measureDownload, measureUpload, ADAPTIVE } from './measure.js';
 import { runLossTest, lossEstimate } from './loss.js';
 
 const $ = (id) => document.getElementById(id);
@@ -105,6 +105,7 @@ function promptFor(v) {
   switch (v) {
     case 'test': {
       const flags = [`--server ${name}`, `--streams ${sp.streams}`, `--time ${sp.durationS}s`];
+      if (sp.adaptive) flags.push('--stop-when-stable');
       if (!sp.runDownload) flags.push('--no-download');
       if (!sp.runUpload) flags.push('--no-upload');
       if (sp.runLoss) flags.push('--loss');
@@ -382,7 +383,7 @@ async function runFull() {
 
   const phaseOpts = (unit) => ({
     streams: sp.streams, durationMs: sp.durationS * 1000, warmupMs: sp.warmupS * 1000,
-    chunkMB: sp.chunkMB, uploadChunkMB: sp.uploadChunkMB, signal,
+    chunkMB: sp.chunkMB, uploadChunkMB: sp.uploadChunkMB, adaptive: sp.adaptive, signal,
     onTick: ({ mbps, elapsedMs, buckets }) => {
       setLive(fmtMbps(mbps), unit);
       progress.at(elapsedMs / (sp.durationS * 1000));
@@ -390,6 +391,9 @@ async function runFull() {
       liveBars(unit.endsWith('DOWN') ? 'Download' : 'Upload', 'Mbps', done, fmtMbps);
     },
   });
+
+  const upTo = sp.adaptive ? 'up to ' : '';
+  const phaseDone = (r) => `${fmtMbps(r.mbps)} mbps${r.stopped ? ` · ${stopNote(r)}` : ''}`;
 
   try {
     progress.begin('info');
@@ -415,17 +419,17 @@ async function runFull() {
     let down = null, up = null, loss = null, lossError = null;
     if (sp.runDownload) {
       progress.begin('down');
-      boot.step(`download · ${sp.durationS} s · ${sp.streams} streams`);
+      boot.step(`download · ${upTo}${sp.durationS} s · ${sp.streams} streams`);
       $('t-live-bars').innerHTML = '';
       down = await measureDownload(s.url, phaseOpts('MBPS DOWN'));
-      boot.ok(`${fmtMbps(down.mbps)} mbps`);
+      boot.ok(phaseDone(down));
     }
     if (sp.runUpload) {
       progress.begin('up');
-      boot.step(`upload · ${sp.durationS} s · ${sp.streams} streams`);
+      boot.step(`upload · ${upTo}${sp.durationS} s · ${sp.streams} streams`);
       $('t-live-bars').innerHTML = '';
       up = await measureUpload(s.url, phaseOpts('MBPS UP'));
-      boot.ok(`${fmtMbps(up.mbps)} mbps`);
+      boot.ok(phaseDone(up));
     }
     if (sp.runLoss) {
       progress.begin('loss');
@@ -476,6 +480,11 @@ async function runFull() {
   } finally {
     setRunning(null);
   }
+}
+
+// Why an adaptive phase ended before the phase duration, e.g. "stable at 5.3 s".
+function stopNote(r) {
+  return `${r.stopped === 'cap' ? `${ADAPTIVE.capBytes / 1e6} mb cap` : 'stable'} at ${r.seconds.toFixed(1)} s`;
 }
 
 function renderFull(r) {
@@ -530,12 +539,15 @@ function renderFull(r) {
     `<b>JITTER</b> is the mean change between consecutive ping samples (${r.sp.pingSamples} HTTP pings).<br>` +
     `<b>GRADE</b> is the best step every measured value meets: ` +
     G.GRADE_STEPS.map((s) => `${s.grade} ≤ ${s.ping} ms / ${s.jitter} ms / ${s.loss}%`).join(' · ') + ' · otherwise F.<br>' +
+    (r.sp.adaptive && (r.down || r.up) ? `<b>DURATION</b> stop when stable: each phase runs at least ${ADAPTIVE.minMs / 1000} s and at least ${ADAPTIVE.afterWarmupMs / 1000} s past the warm-up, then ends once every one-second rate in the last ${ADAPTIVE.windowMs / 1000} s is within ${ADAPTIVE.spread * 100}% of the others, or after ${ADAPTIVE.capBytes / 1e6} MB, and at the latest after ${r.sp.durationS} s. ` +
+      [r.down && `Download ran ${r.down.seconds.toFixed(1)} s`, r.up && `upload ran ${r.up.seconds.toFixed(1)} s`].filter(Boolean).join(', ') + '.<br>' : '') +
     (r.loss ? `<b>LOSS</b> ${r.loss.sent} packets of ${r.cfg.packetSize} B at ${r.cfg.rate}/s; late after ${r.cfg.lateMs} ms.` :
       r.lossError ? `<b>LOSS</b> test failed: ${esc(r.lossError)}` : '<b>LOSS</b> phase was switched off.');
   $('r-why-panel').hidden = true;
   $('r-why').setAttribute('aria-expanded', 'false');
   $('r-when').textContent = `MEASURED ${stamp(r.at)} AGAINST ${r.info.name} (${r.info.location})` +
-    (r.down || r.up ? ` · FIRST ${r.sp.warmupS} S EXCLUDED FROM SPEED AVERAGES` : '');
+    (r.down || r.up ? ` · FIRST ${r.sp.warmupS} S EXCLUDED FROM SPEED AVERAGES` : '') +
+    [r.down?.stopped && ` · DOWNLOAD ${stopNote(r.down).toUpperCase()}`, r.up?.stopped && ` · UPLOAD ${stopNote(r.up).toUpperCase()}`].filter(Boolean).join('');
 }
 
 async function runLoss() {

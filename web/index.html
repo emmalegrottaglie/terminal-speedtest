@@ -182,7 +182,10 @@
         <label class="field"><span>DOWNLOAD REQUEST · MB</span><input type="number" inputmode="numeric" data-setting="speed.chunkMB"></label>
         <label class="field"><span>UPLOAD REQUEST · MB</span><input type="number" inputmode="numeric" data-setting="speed.uploadChunkMB"></label>
       </div>
-      <p class="note">THE FULL TEST'S PACKET-LOSS PHASE USES THE PARAMETERS ON THE LOSS SCREEN.</p>
+      <div class="switch switch-after-fields">
+        <button class="chip" data-toggle="speed.adaptive">STOP WHEN STABLE</button>
+      </div>
+      <p class="note">STOP WHEN STABLE ENDS A PHASE AFTER 4 S ONCE THE SPEED HOLDS STEADY, OR AT 400 MB. THE PHASE DURATION IS THE LIMIT. THE FULL TEST'S PACKET-LOSS PHASE USES THE PARAMETERS ON THE LOSS SCREEN.</p>
 
       <div class="sect">Palette</div>
       <div class="switch" data-axis="palette">
