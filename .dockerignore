@@ -1,0 +1,9 @@
+node_modules
+android
+docs
+terminal-design-guide
+deploy
+.git
+.claude
+.env
+*.md

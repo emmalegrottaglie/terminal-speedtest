@@ -1,0 +1,8 @@
+#cloud-config
+# Paste this as "user data" / "cloud-init" when creating a Debian or Ubuntu VPS.
+# Edit the values on the install line first. Create the DNS record for DOMAIN as soon as
+# the VPS has its address; Caddy retries the certificate until DNS points here.
+runcmd:
+  - >-
+    curl -fsSL https://raw.githubusercontent.com/emmalegrottaglie/terminal-speedtest/main/deploy/install.sh
+    | DOMAIN=fra-01.example.org SERVER_NAME=fra-01 SERVER_LOCATION="NUREMBERG, DE" RTC_PORT=40000 bash

@@ -54,7 +54,9 @@ Open TCP `PORT` and UDP `RTC_PORT` in the firewall. If the packet-loss test says
 
 ### HTTPS
 
-A page served over HTTPS cannot call an `http://` server. For a public deployment, put the server behind a TLS reverse proxy (Caddy, nginx) and add it in the app as `https://…`. The WebRTC traffic is already encrypted (DTLS) and does not go through the proxy.
+A page served over HTTPS cannot call an `http://` server. For a public deployment, put the server behind a TLS reverse proxy on the same host and add it in the app as `https://…`. The WebRTC traffic is already encrypted (DTLS) and does not go through the proxy.
+
+[`deploy/`](deploy/README.md) does all of this with one command on a Debian or Ubuntu VPS: Docker, Caddy with automatic certificates, HTTP/1.1 only (under HTTP/2 the parallel streams would share one connection), no access logs, and the firewall ports.
 
 ### Exposure
 
@@ -122,6 +124,7 @@ web/                    The app: index.html, css/, js/ (no build step)
   css/terminal.css      Design-system stylesheet (copy of terminal-design-guide/terminal.css)
   css/app.css           App-specific components
 android/                Capacitor Android project
+deploy/                 Public server: install script, Docker Compose, Caddy
 terminal-design-guide/  The design system: rules, tokens, specimen
 ```
 

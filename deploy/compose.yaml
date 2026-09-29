@@ -1,0 +1,40 @@
+# A public measurement server: the Node server behind Caddy, which gets and renews the
+# TLS certificate. Configuration is in deploy/.env (see .env.example).
+#
+# Both services use the host's network. The WebRTC echo needs its UDP port reachable
+# without Docker's NAT, and the Node server then sees Caddy on loopback, which is the only
+# place it trusts X-Forwarded-For from. The Node server listens on 127.0.0.1 only, so it
+# is reachable from outside through Caddy alone.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  speedtest:
+    build: ..
+    init: true
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 127.0.0.1
+      PORT: "8080"
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:
