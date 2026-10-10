@@ -16,7 +16,8 @@ const MAX_SESSIONS = Number(env.RTC_MAX_SESSIONS) || 32;
 const SESSION_MS = 180_000;     // hard cap on a session's lifetime
 const GATHER_MS = 5_000;        // ICE gathering deadline before answering
 const MAX_TRACKED = 250_000;    // distinct sequence numbers counted per session
-const MAX_PPS = 300;            // echoed packets per second (the app sends at most 250)
+const MAX_PPS = 300;            // sustained echo rate, packets per second (the app sends at most 250)
+const BURST = 2 * MAX_PPS;      // packets that may arrive at once after a stall or a catch-up
 const MAX_PACKET = 1500;        // bytes (the app sends at most 1200)
 const FLAG_WARMUP = 1;
 
@@ -48,7 +49,7 @@ export function createLossSession(offerSdp, { onClose } = {}) {
   if (sessions.size >= MAX_SESSIONS) return Promise.reject(new Error('server busy, try again shortly'));
 
   const pc = new nodeDataChannel.PeerConnection(`loss-${nextId++}`, rtcConfig());
-  const session = { pc, received: new Set(), closed: false, windowAt: 0, windowCount: 0 };
+  const session = { pc, received: new Set(), closed: false, tokens: BURST, tokensAt: Date.now() };
   sessions.add(session);
 
   const close = () => {
@@ -71,10 +72,14 @@ export function createLossSession(offerSdp, { onClose } = {}) {
       dc.onMessage((msg) => {
         if (typeof msg === 'string' || msg.length < 13 || msg.length > MAX_PACKET) return;
         // Packets beyond the rate cap are dropped, so a custom client cannot turn the echo
-        // into a high-rate traffic source.
+        // into a high-rate traffic source. A token bucket rather than a per-second count:
+        // packets bunched up by a network stall, or by the app catching up after a late
+        // timer, must not be dropped and reported as loss.
         const now = Date.now();
-        if (now - session.windowAt >= 1000) { session.windowAt = now; session.windowCount = 0; }
-        if (++session.windowCount > MAX_PPS) return;
+        session.tokens = Math.min(BURST, session.tokens + ((now - session.tokensAt) * MAX_PPS) / 1000);
+        session.tokensAt = now;
+        if (session.tokens < 1) return;
+        session.tokens--;
         if (!(msg[0] & FLAG_WARMUP) && session.received.size < MAX_TRACKED) {
           session.received.add(msg.readUInt32LE(1));
         }

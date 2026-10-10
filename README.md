@@ -42,6 +42,7 @@ Set these as environment variables:
 | `CLIENT_MAX_STREAMS` | `8` | Parallel download/upload requests per client |
 | `MAX_ACTIVE_CLIENTS` | `3` | Clients that can run a throughput test at the same time; others get `503 server busy`. About 3 per Gbps of port speed |
 | `CLIENT_MAX_LOSS_SESSIONS` | `2` | Concurrent packet-loss sessions per client |
+| `UNLIMITED_PRIVATE_CLIENTS` | `1` (`0` in the Docker image) | Set to `0` to apply the limits to private and link-local clients too |
 
 Setting any of the `CLIENT_*` or `MAX_ACTIVE_CLIENTS` limits to `0` switches it off.
 
@@ -64,11 +65,11 @@ A page served over HTTPS cannot call an `http://` server. For a public deploymen
 The API is intentionally open (CORS `*`) so that the Android app and other origins can use it. To keep a public server from being used as an unmetered bandwidth sink, the server limits each client:
 
 - A client is an IPv4 address or an IPv6 `/64`, since one subscriber usually owns a whole `/64`. Behind a reverse proxy on the same host, the address comes from the proxy's `X-Forwarded-For` header; that header is only trusted on connections from loopback. A proxy on another machine is not supported, because every client would look like the proxy.
-- Clients on the server's own network (loopback, private and link-local addresses) are not limited, so LAN tests at multi-gigabit speeds work.
-- Each client has an hourly data budget (`CLIENT_HOURLY_GB`). Once it is spent, download and upload requests get `429` with a `Retry-After` header until it refills. A 1 Gbps test at the default settings uses about 2.5 GB.
+- Clients on the server's own network (loopback, private and link-local addresses) are not limited, so LAN tests at multi-gigabit speeds work. Behind NAT, such as Docker's default bridge network or a load balancer on a private network, every client arrives from a private address, so this would switch the limits off for everyone. The Docker image therefore sets `UNLIMITED_PRIVATE_CLIENTS=0`, which exempts only loopback.
+- Each client has an hourly data budget (`CLIENT_HOURLY_GB`). Each request is charged in full when it starts and the unused part is refunded when it ends, so parallel requests can't overshoot the budget. A request that doesn't fit in what is left gets `429` with a `Retry-After` header. A 1 Gbps test at the default settings uses about 2.5 GB.
 - Only `MAX_ACTIVE_CLIENTS` clients can run a throughput test at once, so that concurrent tests don't share the port and under-report. A client keeps its slot for 5 s between the download and upload phases. Others get `503`, and `/api/info` reports `busy: true`.
 - Requests are capped at 100 MB (download) and 64 MB (upload); the app repeats requests for as long as a phase runs.
-- Packet-loss sessions are capped per client (`CLIENT_MAX_LOSS_SESSIONS`) and in total (`RTC_MAX_SESSIONS`). Each session echoes at most 300 packets per second of at most 1500 bytes.
+- Packet-loss sessions are capped per client (`CLIENT_MAX_LOSS_SESSIONS`) and in total (`RTC_MAX_SESSIONS`). Each session echoes at most 300 packets per second on average, with bursts of up to 600 so that packets bunched up by a network stall aren't dropped and counted as loss, each at most 1500 bytes.
 
 Several people behind one NAT (a household, a carrier-grade NAT) share one budget. The limits are in memory only; client addresses are never logged or written to disk.
 
@@ -78,7 +79,7 @@ In AUTO mode the app picks the nearest server from a public list, instead of a s
 
 - **Where the list lives:** `web/servers.json`. The app ships with a copy and, in AUTO mode, fetches the current one from this repository at most once a day, so servers can be added without an app update.
 - **Signing:** the list is signed with Ed25519. The app uses a downloaded list only when all of these hold:
-  - its signature matches the public key in `web/js/serverlist.js`
+  - its signature matches the public key in `web/js/serverlist.js` (checked with WebCrypto, or with the bundled [noble-ed25519](https://github.com/paulmillr/noble-ed25519) on WebViews whose WebCrypto lacks Ed25519)
   - it has not expired (lists are valid for a year)
   - it is not older than the list the app already has
 - **Picking a server:** the app pings every server on the list in parallel (3 pings each, after a warm-up) and ranks them by the lowest round trip. At test time it uses the nearest server that answers and does not report `busy`, and falls back to the next one otherwise. The ranking is refreshed when it is older than 10 minutes, or with **RESCAN**.
@@ -152,6 +153,7 @@ web/                    The app: index.html, css/, js/ (no build step)
   js/grade.js           Grade, stability and verdict rules
   js/history.js         Local result history
   js/serverlist.js      Signed public server list, nearest-server ranking
+  js/vendor/            noble-ed25519 3.2.0 (MIT), fallback signature check
   servers.json          Signed public server list (generated)
   css/terminal.css      Design-system stylesheet (copy of terminal-design-guide/terminal.css)
   css/app.css           App-specific components

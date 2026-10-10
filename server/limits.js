@@ -47,10 +47,16 @@ function isLoopback(ip) {
   return ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');
 }
 
-// Loopback, private and link-local clients are on the server's own network and are not
-// limited: a LAN test can move gigabytes a second, and it costs nothing.
+// Loopback clients are never limited. Private and link-local clients are on the server's own
+// network, where a test can move gigabytes a second at no cost, so they are not limited
+// either unless UNLIMITED_PRIVATE_CLIENTS=0. The Docker image sets that: behind Docker's
+// bridge NAT (or a load balancer on a private network) every client arrives from a private
+// address, and exempting them would switch the limits off for everyone.
+const UNLIMITED_PRIVATE = env.UNLIMITED_PRIVATE_CLIENTS !== '0';
+
 export function isLocal(ip) {
   if (isLoopback(ip)) return true;
+  if (!UNLIMITED_PRIVATE) return false;
   if (ip.includes(':')) return /^f[cd]/i.test(ip) || /^fe[89ab]/i.test(ip);
   const [a, b] = ip.split('.').map(Number);
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
@@ -99,15 +105,18 @@ function refusal(status, error, retryAfter) {
   return { status, error, retryAfter: Math.max(1, Math.ceil(retryAfter)) };
 }
 
-// Admits one download or upload request. Returns a refusal ({ status, error, retryAfter })
-// or a stream handle: use(bytes) charges the budget, end() releases the stream.
+// Admits one download or upload request of at most `bytes`. Returns a refusal
+// ({ status, error, retryAfter }) or a stream handle: use(n) records bytes moved, end()
+// releases the stream. The whole request is charged to the budget up front and the unused
+// part refunded at the end, so parallel requests cannot overshoot the budget.
 const UNLIMITED = { use() {}, end() {} };
 
-export function admitStream(key) {
+export function admitStream(key, bytes) {
   if (!key) return UNLIMITED;
   const c = stateOf(key);
-  if (HOURLY_BYTES && c.tokens <= 0) {
-    const wait = (-c.tokens / HOURLY_BYTES) * 3600 + 60;
+  const reserve = HOURLY_BYTES ? Math.min(bytes, HOURLY_BYTES) : 0;
+  if (c.tokens < reserve) {
+    const wait = ((reserve - c.tokens) / HOURLY_BYTES) * 3600 + 60;
     return refusal(429, `hourly data limit reached for your address, try again in ${Math.ceil(wait / 60)} min`, wait);
   }
   if (CLIENT_STREAMS && c.streams >= CLIENT_STREAMS) {
@@ -116,13 +125,17 @@ export function admitStream(key) {
   if (isBusy(key)) return refusal(503, 'server busy, try again shortly', 5);
 
   c.streams++;
+  c.tokens -= reserve;
   active.add(key);
   let open = true;
+  let used = 0;
   return {
-    use(bytes) { c.tokens -= bytes; },
+    use(n) { used += n; },
     end() {
       if (!open) return;
       open = false;
+      const s = stateOf(key);
+      s.tokens = Math.min(HOURLY_BYTES, s.tokens + Math.max(0, reserve - used));
       c.streams--;
       c.lingerUntil = Date.now() + LINGER_MS;
     },

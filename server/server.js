@@ -75,10 +75,10 @@ function refuse(res, r) {
 function handleDown(req, res, url, client) {
   const requested = Number(url.searchParams.get('bytes'));
   if (!Number.isFinite(requested) || requested <= 0) return send(res, 400, { error: 'bytes must be a positive number' });
-  const stream = admitStream(client);
+  const total = Math.min(Math.floor(requested), MAX_DOWN_BYTES);
+  const stream = admitStream(client, total);
   if (stream.error) return refuse(res, stream);
   res.on('close', stream.end);
-  const total = Math.min(Math.floor(requested), MAX_DOWN_BYTES);
   res.writeHead(200, { ...CORS, ...NO_STORE, 'Content-Type': 'application/octet-stream', 'Content-Length': total });
   let left = total;
   const pump = () => {
@@ -95,7 +95,10 @@ function handleDown(req, res, url, client) {
 }
 
 function handleUp(req, res, client) {
-  const stream = admitStream(client);
+  // The budget is reserved up front: the declared length, or the maximum for a chunked body.
+  const declared = Number(req.headers['content-length']);
+  if (declared > MAX_UP_BYTES) return send(res, 413, { error: 'upload too large' }, { Connection: 'close' });
+  const stream = admitStream(client, Number.isFinite(declared) && declared >= 0 ? declared : MAX_UP_BYTES);
   if (stream.error) return refuse(res, stream);
   res.on('close', stream.end);
   let received = 0;
@@ -165,7 +168,10 @@ function serveStatic(req, res, url) {
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  // The parser accepts request targets that URL rejects (e.g. "http://["); an exception
+  // here would take the whole process down.
+  let url;
+  try { url = new URL(req.url, 'http://localhost'); } catch { return send(res, 400, 'bad request target'); }
   const route = `${req.method} ${url.pathname}`;
   const ip = clientAddress(req);
   const client = clientKey(ip);
