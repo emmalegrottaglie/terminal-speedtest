@@ -108,7 +108,7 @@ function confirmTap(button, question, action) {
 function promptFor(v) {
   const s = server();
   const name = s ? (serverStatus.get(s.url)?.info?.name || 'custom') : null;
-  if (!s && v !== 'history') return 'config --add-server <address>';
+  if (!s && !settings.auto && v !== 'history') return 'config --add-server <address>';
   const sp = settings.speed, l = settings.loss;
   switch (v) {
     case 'test': {
@@ -306,6 +306,16 @@ function requireServer() {
   return false;
 }
 
+// Waits for a promise, or rejects with an AbortError as soon as the signal aborts.
+function untilAborted(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('Test aborted', 'AbortError'));
+    if (signal.aborted) return onAbort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
 // Connects a test to its server. In AUTO mode the public servers are pinged again if the
 // last ranking is old, then the nearest one that answers and isn't busy is used.
 async function openServer(signal) {
@@ -315,7 +325,7 @@ async function openServer(signal) {
     serverStatus.set(s.url, { ok: true, info });
     return { url: s.url, info };
   }
-  if (!ranked.length || Date.now() - rankedAt > RANK_MAX_AGE_MS) await rescan(signal);
+  if (!ranked.length || Date.now() - rankedAt > RANK_MAX_AGE_MS) await untilAborted(rescan(), signal);
   let lastError = new Error('no public server answered');
   for (const c of ranked) {
     try {
@@ -756,19 +766,23 @@ async function checkServer(url) {
 
 // Loads the public list and pings its servers. Runs at start-up in AUTO mode, when AUTO is
 // switched on, before a test when the ranking is old, and from RESCAN.
-function rescan(signal) {
-  ranking ??= (async () => {
+// A rescan is shared by everyone waiting for it and always runs to the end (at most about
+// 11 s); a test that is aborted stops waiting instead (see untilAborted).
+function rescan() {
+  if (!ranking) {
+    ranking = (async () => {
+      publicList = await L.loadList();
+      ranked = await L.rankServers(publicList);
+      rankedAt = Date.now();
+    })().finally(() => {
+      ranking = null;
+      renderServers();
+      renderHeader();
+      renderIdle();
+      if (settings.auto && ranked[0] && !serverStatus.get(ranked[0].url)?.info) checkServer(ranked[0].url);
+    });
     renderServers();
-    publicList = await L.loadList();
-    ranked = await L.rankServers(publicList, signal);
-    rankedAt = Date.now();
-  })().finally(() => {
-    ranking = null;
-    renderServers();
-    renderHeader();
-    renderIdle();
-    if (settings.auto && ranked[0] && !serverStatus.get(ranked[0].url)?.info) checkServer(ranked[0].url);
-  });
+  }
   return ranking;
 }
 

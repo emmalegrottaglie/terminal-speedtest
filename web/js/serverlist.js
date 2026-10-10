@@ -16,23 +16,41 @@ const REFRESH_MS = 86_400_000;
 const PROBE_SAMPLES = 3;
 const PROBE_TIMEOUT_MS = 3000;
 
-let keyPromise = null;
+let verifierPromise = null;
 
+// Accepts base64 and base64url.
 function bytes(base64) {
-  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const b = base64.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b + '='.repeat((4 - (b.length % 4)) % 4)), (c) => c.charCodeAt(0));
 }
 
-// true: valid signature. false: invalid. null: this browser cannot check Ed25519 signatures
-// (an old WebView, or a plain-http page, where WebCrypto is unavailable).
+// A function (signature, message) => Promise<boolean> that checks against PUBLIC_KEY. It uses
+// the browser's own Ed25519 where WebCrypto has it, and otherwise the bundled noble-ed25519,
+// so Android WebViews from before Ed25519 support can still accept a downloaded list.
+function verifier() {
+  verifierPromise ??= (async () => {
+    try {
+      const key = await crypto.subtle.importKey('jwk', { kty: 'OKP', crv: 'Ed25519', x: PUBLIC_KEY }, { name: 'Ed25519' }, false, ['verify']);
+      return (sig, msg) => crypto.subtle.verify({ name: 'Ed25519' }, key, sig, msg);
+    } catch {
+      const ed = await import('./vendor/noble-ed25519.js');
+      const publicKey = bytes(PUBLIC_KEY);
+      return (sig, msg) => ed.verifyAsync(sig, msg, publicKey);
+    }
+  })().catch((err) => { verifierPromise = null; throw err; });
+  return verifierPromise;
+}
+
+// true: valid signature. false: invalid. null: no way to check here. Both verifiers need
+// crypto.subtle (noble-ed25519 hashes with it), which plain-http pages do not have.
 async function verified(doc) {
-  if (!crypto?.subtle) return null;
+  if (!globalThis.crypto?.subtle) return null;
+  let check;
+  try { check = await verifier(); } catch { return null; }
   try {
-    keyPromise ??= crypto.subtle.importKey('jwk', { kty: 'OKP', crv: 'Ed25519', x: PUBLIC_KEY }, { name: 'Ed25519' }, false, ['verify']);
-    const key = await keyPromise;
-    return await crypto.subtle.verify({ name: 'Ed25519' }, key, bytes(doc.signature), new TextEncoder().encode(doc.payload));
+    return await check(bytes(doc.signature), new TextEncoder().encode(doc.payload));
   } catch {
-    keyPromise = null;
-    return null;
+    return false;  // malformed signature
   }
 }
 
@@ -71,12 +89,17 @@ export async function loadList({ refresh = true } = {}) {
   const candidates = [];
   try { candidates.push(await open(await fetchDoc(BUNDLED_URL), { bundled: true })); } catch { /* no bundled copy */ }
   const cache = readCache();
-  if (cache) candidates.push(await open(cache.doc));
+  const cached = cache ? await open(cache.doc) : null;
+  candidates.push(cached);
   if (refresh && !(cache && Date.now() - cache.fetchedAt < REFRESH_MS)) {
     try {
       const doc = await fetchDoc(REMOTE_URL);
       const list = await open(doc);
-      if (list) { writeCache(doc); candidates.push(list); }
+      if (list) {
+        // A stale or reverted copy must not replace a newer cached list.
+        writeCache(cached && cached.seq > list.seq ? cache.doc : doc);
+        candidates.push(list);
+      }
     } catch { /* offline or blocked: keep what we have */ }
   }
   return candidates.filter(Boolean).sort((a, b) => b.seq - a.seq)[0] || null;
@@ -84,16 +107,14 @@ export async function loadList({ refresh = true } = {}) {
 
 // Servers from the list that answered, nearest first: [{ id, url, location, rtt }].
 // Every server is pinged in parallel; each gets PROBE_TIMEOUT_MS to answer.
-export async function rankServers(list, signal) {
+export async function rankServers(list) {
   const probed = await Promise.all((list?.servers || []).map(async (s) => {
-    const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
     try {
-      const rtt = await probeLatency(s.url, PROBE_SAMPLES, signal ? AbortSignal.any([signal, timeout]) : timeout);
+      const rtt = await probeLatency(s.url, PROBE_SAMPLES, AbortSignal.timeout(PROBE_TIMEOUT_MS));
       return { ...s, rtt };
     } catch {
       return null;
     }
   }));
-  if (signal?.aborted) throw new DOMException('Test aborted', 'AbortError');
   return probed.filter(Boolean).sort((a, b) => a.rtt - b.rtt);
 }
