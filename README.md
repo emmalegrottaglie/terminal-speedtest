@@ -5,7 +5,7 @@ A terminal-inspired speed and packet-loss test for the web and Android, built wi
 - **Speed test:** latency, jitter, download and upload over parallel HTTP streams, with per-second charts, a stability score and a quality grade.
 - **Packet-loss test:** UDP-like packets over a WebRTC data channel (unordered, no retransmits), in the style of packetlosstest.com. It reports upload loss, download loss and total loss, late packets, latency (average, min, p95, max) and jitter, and draws a map with one glyph per packet.
 - **Tunable:** packet size, packet rate, duration, late threshold and pre-wait, plus traffic presets (FPS 64/128 Hz, VoIP, video call, stress). The speed test's phase duration, warm-up, streams, request sizes and ping samples are adjustable too.
-- **Looks like a console:** four palettes, three accent sets, three typefaces, CRT scanlines and text scaling. The rules are in [`terminal-design-guide/`](terminal-design-guide/DESIGN_GUIDE.md).
+- **Looks like a console:** four palettes, three accent sets, three typefaces, CRT scanlines and text scaling. The rules are in [`terminal-design-system/`](terminal-design-system/DESIGN_GUIDE.md).
 - **Private by default:** no analytics and no accounts. History and settings stay on the device (history saving can be switched off).
 - **Finds a server for you:** in AUTO mode the app pings every server on the signed public server list and tests against the nearest one that answers. Your own servers work alongside it.
 
@@ -155,13 +155,13 @@ web/                    The app: index.html, css/, js/ (no build step)
   js/serverlist.js      Signed public server list, nearest-server ranking
   js/vendor/            noble-ed25519 3.2.0 (MIT), fallback signature check
   servers.json          Signed public server list (generated)
-  css/terminal.css      Design-system stylesheet (copy of terminal-design-guide/terminal.css)
+  css/terminal.css      Design-system stylesheet (copy of terminal-design-system/terminal.css)
   css/app.css           App-specific components
 servers/list.json       Public server list, before signing
 tools/sign-servers.mjs  Creates the signing key and signs the server list
 android/                Capacitor Android project
 deploy/                 Public server: install script, Docker Compose, Caddy
-terminal-design-guide/  The design system: rules, tokens, specimen
+terminal-design-system/ The design system: rules, tokens, specimen
 ```
 
 ## License

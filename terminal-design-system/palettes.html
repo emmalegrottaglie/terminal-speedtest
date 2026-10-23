@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-palette="term-phosphor">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal palettes</title>
+<!-- Palette reference sheets, drawn from terminal.css so they never drift from it.
+     ?palette=term-amber&mode=light shows one sheet; ?sheet=type shows the typeface sheet;
+     no parameters shows all of them.
+     The PNGs in palettes/ are screenshots of this page (see README.md). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="terminal.css">
+<style>
+  body { margin: 0; background: #111; font-family: var(--font); }
+  .sheets { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; }
+  .sheet { width: 1200px; height: 675px; box-sizing: border-box; background: var(--term-bg); color: var(--term-ink); display: flex; flex-direction: column; }
+  .sheet-band { background: var(--a1); color: var(--term-bg); padding: 22px 40px; font-size: 26px; font-weight: 800; letter-spacing: .14em; display: flex; justify-content: space-between; }
+  .sheet-band small { font-size: 14px; letter-spacing: .12em; align-self: center; }
+  .sheet-body { padding: 26px 40px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 24px; }
+  .sw { display: grid; grid-template-columns: 64px 1fr; gap: 0 14px; align-items: center; }
+  .chip-c { width: 64px; height: 64px; border: 1px solid var(--term-line); grid-row: span 4; }
+  .sw b { font-size: 15px; font-weight: 800; letter-spacing: .1em; }
+  .sw span { font-size: 12px; color: var(--term-muted); letter-spacing: .04em; line-height: 1.45; }
+  .sw .hex { color: var(--term-ink); font-size: 14px; font-weight: 700; }
+  .sample { margin: auto 40px 0; padding: 18px 0 26px; border-top: 1px solid var(--term-line); display: flex; gap: 36px; align-items: flex-end; }
+  .sample .hero { font-size: 64px; font-weight: 800; color: var(--a1); line-height: 1; text-shadow: var(--glow-hero); }
+  .sample .lbl { font-size: 13px; letter-spacing: .18em; font-weight: 800; color: var(--a2); }
+  .sample .hl { font-size: 13px; letter-spacing: .12em; font-weight: 800; color: var(--a3); border: 1px solid var(--a3); padding: 6px 10px; }
+  .sample .mut { font-size: 12px; color: var(--term-muted); letter-spacing: .06em; }
+  .sample svg { width: 260px; height: 64px; background: var(--term-card); }
+  .type-body { padding: 22px 40px 0; display: flex; flex-direction: column; gap: 14px; }
+  .face { display: grid; grid-template-columns: 300px 1fr; gap: 0 28px; align-items: baseline; padding-bottom: 14px; border-bottom: 1px solid var(--term-faint); }
+  .face:last-child { border-bottom: 0; }
+  .face b { font-family: var(--font); font-size: 15px; font-weight: 800; letter-spacing: .1em; color: var(--a2); }
+  .face .meta { grid-column: 1; font-family: var(--font); font-size: 12px; color: var(--term-muted); letter-spacing: .04em; line-height: 1.5; }
+  .face .spec { grid-column: 2; grid-row: 1 / span 3; display: flex; flex-direction: column; gap: 4px; color: var(--term-ink); }
+  .face .spec span { display: grid; grid-template-columns: 112px 1fr; align-items: baseline; font-size: 22px; line-height: 1.15; }
+  .face .spec small { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--term-muted); letter-spacing: .1em; margin-right: 10px; }
+  .face.main .spec span { font-size: 26px; }
+  .type-note { margin: auto 40px 0; padding: 14px 0 22px; border-top: 1px solid var(--term-line); font-size: 12px; color: var(--term-muted); letter-spacing: .04em; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="sheets" id="sheets"></div>
+<script>
+  const PALETTES = { 'term-phosphor': 'PHOSPHOR', 'term-amber': 'AMBER', 'term-navy': 'BROADCAST 8S' };
+  const TOKENS = [
+    ['--term-bg', 'BG', 'Page ground'], ['--term-card', 'CARD', 'Raised surfaces, chart grounds'], ['--term-ink', 'INK', 'Body text, values'],
+    ['--term-muted', 'MUTED', 'Labels, captions, secondary text'], ['--term-line', 'LINE', 'Hairlines, borders'], ['--term-faint', 'FAINT', 'Row dividers, bar tracks'],
+    ['--a1', 'A1 · CHROME', 'Bands, hero value, active nav'], ['--a2', 'A2 · DATA', 'Section labels, chart lines'], ['--a3', 'A3 · HIGHLIGHT', 'Deltas, callouts, peaks'],
+  ];
+  const TEXT = new Set(['--term-ink', '--term-muted', '--a1', '--a2', '--a3']);
+
+  // Resolve any CSS colour (hex or rgba) to RGBA numbers via a canvas.
+  const ctx = document.createElement('canvas').getContext('2d');
+  const rgba = (c) => {
+    ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data; return [r, g, b, a / 255];
+  };
+  const over = ([r, g, b, a], [R, G, B]) => [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)].map(Math.round);
+  const hex = (c) => '#' + c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join('');
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+
+  function sheet(palette, mode) {
+    // Each sheet reads the tokens with its own palette and mode set on <html>.
+    const root = document.documentElement;
+    root.dataset.palette = palette;
+    if (mode === 'light') root.dataset.mode = 'light'; else delete root.dataset.mode;
+    const cs = getComputedStyle(root);
+    const val = (t) => cs.getPropertyValue(t).trim();
+    const bg = rgba(val('--term-bg'));
+    const vars = TOKENS.map(([t]) => `${t}:${val(t)}`).concat(['--glow-hero', '--font'].map((t) => `${t}:${val(t)}`)).join(';');
+    const swatches = TOKENS.map(([t, name, role]) => {
+      const raw = val(t), c = rgba(raw), solid = over(c, bg);
+      const translucent = c[3] < 1;
+      const lines = [
+        `<span class="hex">${hex(solid).toUpperCase()}</span>`,
+        `<span>RGB ${solid.join(' ')}${translucent ? ` · ${raw.replace(/\s/g, '')} on BG` : ''}</span>`,
+        `<span>${role}${TEXT.has(t) ? ` · ${contrast(solid, bg).toFixed(1)}:1 on BG` : ''}</span>`,
+      ];
+      return `<div class="sw"><div class="chip-c" style="background:${raw}"></div><b>${name}</b>${lines.join('')}</div>`;
+    }).join('');
+    return `<section class="sheet" style="${vars}" data-sheet="${palette}-${mode}">
+      <div class="sheet-band">// ${PALETTES[palette]} · ${mode.toUpperCase()}<small>${palette}${mode === 'light' ? ' · data-mode="light"' : ''}</small></div>
+      <div class="sheet-body">${swatches}</div>
+      <div class="sample">
+        <div><div class="hero">120</div><div class="mut">HERO VALUE · A1</div><div class="mut">TYPE · JETBRAINS MONO</div></div>
+        <div><div class="lbl">// SECTION LABEL · A2</div><div class="mut">MUTED CAPTION TEXT</div></div>
+        <svg viewBox="0 0 260 64" aria-hidden="true"><path d="M8 44 L40 38 L72 46 L104 30 L136 34 L168 18 L200 26 L252 14" fill="none" stroke="var(--a2)" stroke-width="2"/>
+          <line x1="8" x2="252" y1="52" y2="52" stroke="var(--term-line)"/><circle cx="168" cy="18" r="4" fill="var(--a3)"/></svg>
+        <div class="hl">HIGHLIGHT · A3</div>
+      </div></section>`;
+  }
+
+  // The three typefaces terminal.css offers (data-font), drawn on the phosphor palette.
+  const FACES = [
+    ['jetbrains', 'JetBrains Mono', 'Default · used by the Bot Traffic Monitor', [400, 500, 700, 800]],
+    ['plex', 'IBM Plex Mono', 'Alternative', [400, 500, 700]],
+    ['space', 'Space Mono', 'Alternative', [400, 700]],
+  ];
+  const WEIGHT = { 400: 'REGULAR', 500: 'MEDIUM', 700: 'BOLD', 800: 'EXTRABOLD' };
+  function typeSheet() {
+    const faces = FACES.map(([attr, name, role, weights], i) => {
+      const stack = `'${name}', ui-monospace, Menlo, monospace`;
+      const spec = weights.map((w) => `<span style="font-family:${stack};font-weight:${w}">`
+        + `<small>${w} ${WEIGHT[w]}</small>SPEED 120 MB/S · 0123456789</span>`).join('');
+      return `<div class="face${i === 0 ? ' main' : ''}"><b>${name.toUpperCase()}</b>`
+        + `<div class="meta">${role}</div><div class="meta">data-font="${attr}"${i === 0 ? ' (or none)' : ''} · weights ${weights.join(', ')}</div>`
+        + `<div class="spec">${spec}</div></div>`;
+    }).join('');
+    return `<section class="sheet" data-sheet="type">
+      <div class="sheet-band">// TYPEFACES<small>Google Fonts · SIL Open Font License 1.1</small></div>
+      <div class="type-body">${faces}</div>
+      <div class="type-note">All text is set in one monospaced face, uppercase for labels. Hero value 92 px / 800, tracking −.055em ·
+        section label 10 px / 800, .30em · body and table cells 11 px / 500 · numbers use tabular figures.
+        Full type scale: DESIGN_GUIDE.md, section 4.</div></section>`;
+  }
+
+  // Only known palettes and modes are drawn: the values go into markup, so anything else
+  // in the address is ignored rather than rendered.
+  const q = new URLSearchParams(location.search);
+  const pick = q.get('palette'), mode = q.get('mode') === 'light' ? 'light' : 'dark';
+  const onlyType = q.get('sheet') === 'type';
+  const want = onlyType ? [] : Object.hasOwn(PALETTES, pick) ? [[pick, mode]]
+    : Object.keys(PALETTES).flatMap((p) => [[p, 'dark'], [p, 'light']]);
+  const withType = onlyType || !Object.hasOwn(PALETTES, pick);
+  document.getElementById('sheets').innerHTML = want.map(([p, m]) => sheet(p, m)).join('') + (withType ? typeSheet() : '');
+  // The page itself goes back to neutral; each sheet carries its own tokens inline.
+  document.documentElement.dataset.palette = 'term-phosphor'; delete document.documentElement.dataset.mode;
+</script>
+</body>
+</html>

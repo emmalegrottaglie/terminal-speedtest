@@ -1,5 +1,5 @@
 /* App layout and the few components the design kit does not ship.
-   Everything here builds on the tokens in terminal.css; see terminal-design-guide/. */
+   Everything here builds on the tokens in terminal.css; see terminal-design-system/. */
 
 [hidden] { display: none !important; }
 
