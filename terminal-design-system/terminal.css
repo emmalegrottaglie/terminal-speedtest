@@ -1,10 +1,13 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    Terminal design system — web edition
-   Extracted from the WeatherTerminal app (React Native). Values match the app
+   Extracted from the Weather Terminal app (React Native). Values match the app
    one-for-one; see DESIGN_GUIDE.md for the rules behind them.
 
    Three independent axes, set as attributes on <html>:
      data-palette = "term-phosphor" | "term-amber" | "term-navy" | "term-light"
+     data-mode    = "dark" (default, no attribute) | "light"
+                    (light versions of phosphor, amber and navy; term-light is
+                    phosphor's light version under its older name)
      data-accents = "uniform" | "duotone" | "broadcast" (default, no attribute)
      data-font    = "jetbrains" (default) | "plex" | "space"
 
@@ -39,6 +42,33 @@
   --a1: #1a7030; --a2: #0a5f7d; --a3: #8f4e00;
   --crt-chrome-opacity: .34; /* paper ground: texture pulled right back */
 }
+
+/* ── Light mode ─────────────────────────────────────────────────────────────
+   Every palette has a light version, chosen with data-mode="light" on <html>.
+   Text colours (ink, muted, a1-a3) are at least 4.5:1 on both bg and card.
+   Phosphor light is the same as term-light, kept above for older pages.
+   Glows blur on a pale ground, so they are switched off. */
+html[data-mode="light"], html[data-mode="light"][data-palette="term-phosphor"] {
+  --term-bg: #f1eee2; --term-card: #e7e3d4; --term-ink: #14170f; --term-muted: #5a6050;
+  --term-line: rgba(20,23,15,.24); --term-faint: rgba(20,23,15,.1);
+  --a1: #1a7030; --a2: #0a5f7d; --a3: #8f4e00;
+}
+html[data-mode="light"][data-palette="term-amber"] {
+  --term-bg: #f6f0e3; --term-card: #ece4d2; --term-ink: #1c140a; --term-muted: #6b5434;
+  --term-line: rgba(28,20,10,.24); --term-faint: rgba(28,20,10,.1);
+  --a1: #8a4f00; --a2: #b0261c; --a3: #5e4a00;
+}
+html[data-mode="light"][data-palette="term-navy"] {
+  --term-bg: #eef1fb; --term-card: #e0e5f5; --term-ink: #0b1030; --term-muted: #4a5788;
+  --term-line: rgba(11,16,48,.24); --term-faint: rgba(11,16,48,.1);
+  --a1: #a8115f; --a2: #006b85; --a3: #7d5a00;
+}
+html[data-mode="light"] {
+  --crt-chrome-opacity: .34; --glow-hero: none; --glow-label: none; --glow-led: none;
+  color-scheme: light;
+}
+html:not([data-mode="light"]):not([data-palette="term-light"]) { color-scheme: dark; }
+[data-palette="term-light"] { color-scheme: light; }
 
 /* ── Accent sets (applied after palettes so they win) ─────────────────────── */
 [data-accents="uniform"] { --a2: var(--a1); --a3: var(--a1); }
@@ -149,15 +179,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* ── Labeled bar chart: value above, axis label below, peak in a3 ──────── */
 .bars { display: flex; gap: 3px; padding: 0 var(--gutter); margin-bottom: 12px; }
 .bar { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.bar-value { text-align: center; margin-bottom: 4px; color: var(--term-ink); font-size: 9px; font-weight: 700; white-space: nowrap; }
-.bar-track { height: 72px; display: flex; align-items: flex-end; }
+.bar-value { text-align: center; margin-bottom: 4px; color: var(--term-ink); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.bar-track { position: relative; height: 72px; display: flex; align-items: flex-end; }
 .bar-fill {
   width: 100%; height: var(--pct, 50%);
   background: color-mix(in srgb, var(--a2) 30%, transparent);
   border-top: 2px solid var(--a2);
   transition: height .3s steps(6, end);
 }
-.bar-label { text-align: center; margin-top: 5px; color: var(--term-muted); font-size: 8px; letter-spacing: .06em; white-space: nowrap; }
+.bar-label { text-align: center; margin-top: 5px; color: var(--term-muted); font-size: 9px; letter-spacing: .06em; white-space: nowrap; }
 .bar.peak .bar-value { color: var(--a3); }
 .bar.peak .bar-fill { background: color-mix(in srgb, var(--a3) 55%, transparent); border-top-color: var(--a3); }
 
@@ -245,6 +275,19 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @media (hover: hover) { .action:hover { background: var(--a1); color: var(--term-bg); } }
 .action:disabled, .action:disabled:hover { opacity: .4; background: transparent; color: var(--a1); cursor: default; }
 
+/* ── Destructive action: outlined in a3, then a two-button confirm ─────── */
+.action.danger { border-color: var(--a3); color: var(--a3); }
+.action.danger:active { background: var(--a3); color: var(--term-bg); }
+@media (hover: hover) { .action.danger:hover { background: var(--a3); color: var(--term-bg); } }
+.action.danger.fill { background: var(--a3); color: var(--term-bg); }
+.action.cancel { border-color: var(--term-line); color: var(--term-ink); }
+.action.cancel:active { background: var(--term-faint); color: var(--term-ink); }
+@media (hover: hover) { .action.cancel:hover { background: var(--term-faint); color: var(--term-ink); } }
+.action-explain { margin: 15px var(--gutter) 0; color: var(--term-muted); font-size: 9px; line-height: 1.55; letter-spacing: .06em; }
+.action-confirm { margin: 12px var(--gutter) 0; color: var(--a3); font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.action-pair { display: flex; gap: 8px; margin: 10px var(--gutter) 18px; }
+.action-pair .action { flex: 1; width: auto; margin: 0; }
+
 /* ── Bottom nav ────────────────────────────────────────────────────────── */
 .nav {
   position: sticky; bottom: 0; display: flex; background: var(--term-bg);
@@ -256,3 +299,74 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
 }
 .nav a[aria-current="page"] { color: var(--a1); }
+
+/* ── Additions from the Weather Terminal app (v1.0, October 2026) ─────────
+   Everything below is new and additive: no existing class changes. */
+
+/* Data age in a band or sub row: `UPD 06:22`, or `STALE 06:22` once the data
+   is older than the product's freshness window. Never call cached data LIVE. */
+.upd { color: inherit; }
+.upd::before { content: "UPD "; }
+.upd.stale { color: var(--a3); }
+.band .upd.stale { color: var(--term-bg); text-decoration: underline; text-underline-offset: 3px; }
+.upd.stale::before { content: "STALE "; }
+
+/* One-line callout over a chart: the peak on the left in a3, the secondary
+   extreme on the right in a2 (`PEAK 23° AT 14:00` / `RAIN MAX 30% AT 03:00`). */
+.callout {
+  display: flex; justify-content: space-between; flex-wrap: wrap; column-gap: 12px; row-gap: 4px;
+  padding: 8px var(--gutter) 6px; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+}
+.callout-peak { color: var(--a3); }
+.callout-data { color: var(--a2); }
+
+/* Range list: one row per day/item with low, a bar positioned on the WHOLE
+   list's min–max (never per row), high and a data column. Has a header row. */
+.ranges { padding: 0 var(--gutter); }
+.range-row {
+  display: grid; grid-template-columns: 46px 1fr 30px minmax(60px, 1.3fr) 30px 34px; align-items: center; gap: 6px;
+  padding: 7px 0; border-bottom: 1px solid var(--term-faint); font-size: 11px;
+}
+.range-row.head { color: var(--term-muted); font-size: 8px; font-weight: 800; letter-spacing: .15em; border-bottom-color: var(--term-line); }
+.range-key { color: var(--term-ink); font-weight: 800; letter-spacing: .06em; white-space: nowrap; }
+.range-cat { color: var(--a2); font-size: 9px; letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.range-lo { color: var(--term-muted); font-weight: 800; text-align: right; }
+.range-hi { color: var(--term-ink); font-weight: 800; }
+.range-data { color: var(--a2); font-weight: 800; text-align: right; }
+.range-track { position: relative; height: 5px; background: var(--term-faint); }
+.range-fill { position: absolute; top: 0; bottom: 0; left: var(--from, 0%); right: calc(100% - var(--to, 100%)); background: var(--a2); }
+.range-row.peak .range-hi { color: var(--a3); }
+.range-row.peak .range-fill { background: var(--a3); }
+
+/* Fixed meaning scale (AQI, grades, signal quality). Colours are set per
+   product on --scale-1 … --scale-5 and must NOT follow the palette. The
+   active segment is full strength; the rest sit at 24%. */
+.fixed-scale { display: flex; gap: 2px; padding: 16px var(--gutter) 7px; }
+.fixed-scale > span { flex: 1; height: 7px; opacity: .24; }
+.fixed-scale > span:nth-child(1) { background: var(--scale-1, #4ade80); }
+.fixed-scale > span:nth-child(2) { background: var(--scale-2, #a3e635); }
+.fixed-scale > span:nth-child(3) { background: var(--scale-3, #fbbf24); }
+.fixed-scale > span:nth-child(4) { background: var(--scale-4, #fb923c); }
+.fixed-scale > span:nth-child(5) { background: var(--scale-5, #ef4444); }
+.fixed-scale > span.on { opacity: 1; }
+.fixed-scale-labels { display: flex; justify-content: space-between; padding: 0 var(--gutter); color: var(--term-muted); font-size: 8px; letter-spacing: .16em; text-transform: uppercase; }
+
+/* Whole-module empty state when there is no data at all (not merely one
+   unknown value, which is `—`). Says what to do next. */
+.nodata { padding: 24px var(--gutter); text-align: center; color: var(--term-muted); font-size: 9px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+
+/* Segmented channel selector (map layers, chart series). Active = filled a1
+   chip, inactive = ghost chip; one is always active. */
+.channels { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px var(--gutter); }
+.channels .chip { cursor: pointer; }
+.channels .chip:not([aria-pressed="true"]) { background: transparent; color: var(--term-muted); border-color: var(--term-line); }
+
+/* ── Chart honesty (DESIGN_GUIDE.md §11) ─────────────────────────────────────
+   A missing value is a gap: "—" above an empty track, never a zero bar.
+   .bar-ref draws a dashed reference line at --ref (a percentage of the track),
+   explained in .bars-caption, the muted line under the axis that names the
+   baseline. */
+.bar.gap .bar-value { color: var(--term-muted); }
+.bar.gap .bar-fill { display: none; }
+.bar-ref { position: absolute; left: 0; right: 0; bottom: var(--ref, 50%); border-top: 1px dashed var(--term-ink); pointer-events: none; }
+.bars + .bars-caption, .bars-caption { margin: -4px 0 12px; padding: 0 var(--gutter); color: var(--term-muted); font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; }

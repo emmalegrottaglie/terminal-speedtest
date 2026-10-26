@@ -76,6 +76,17 @@
         <tr><td class="t-key">09:47</td><td class="t-value">355</td><td class="t-data">35</td><td class="t-delta">19 MS</td></tr>
       </tbody>
     </table>
+
+    <!-- Destructive action: the first tap only asks, in place. -->
+    <p class="action-explain">Removes every saved result from this device. Nothing is kept anywhere else.</p>
+    <div id="clear-ask"><button class="action danger" id="clear">✕ CLEAR HISTORY</button></div>
+    <div id="clear-confirm" hidden>
+      <p class="action-confirm" aria-live="polite">CLEAR ALL RESULTS? THIS CAN'T BE UNDONE.</p>
+      <div class="action-pair">
+        <button class="action cancel" id="clear-cancel">✕ CANCEL</button>
+        <button class="action danger fill" id="clear-ok">■ CLEAR</button>
+      </div>
+    </div>
   </section>
 
   <button class="action" id="run">▶ RUN TEST</button>
@@ -110,6 +121,16 @@
 <div class="crt" aria-hidden="true"></div>
 
 <script>
+// Destructive action demo: ask in place, then put the button back.
+(() => {
+  const ask = document.getElementById('clear-ask');
+  const confirm = document.getElementById('clear-confirm');
+  const toggle = (asking) => { ask.hidden = asking; confirm.hidden = !asking; };
+  document.getElementById('clear').addEventListener('click', () => toggle(true));
+  document.getElementById('clear-cancel').addEventListener('click', () => toggle(false));
+  document.getElementById('clear-ok').addEventListener('click', () => toggle(false));
+})();
+
   const $ = (id) => document.getElementById(id);
   const pad = (n) => String(n).padStart(2, '0');
   const now = new Date();
