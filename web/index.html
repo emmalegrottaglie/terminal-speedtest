@@ -32,122 +32,139 @@
 
   <main>
     <!-- ── TEST ─────────────────────────────────────────────────────────── -->
-    <section id="view-test" class="view" data-title="// SPEEDTEST">
-      <div id="t-idle" class="boot compact">
-        <div class="boot-line cmd">❯ awaiting command</div>
-        <div class="boot-line">no result yet · press run test</div>
+    <!-- Blocks with data-show appear only in that state (data-state, set by app.js). On a wide
+         layout the two .col blocks sit side by side; on a narrow one their children interleave in
+         --o order, which keeps the graphics on top while a test runs. -->
+    <section id="view-test" class="view" data-title="// SPEEDTEST" data-state="idle">
+      <div class="split reorder">
+        <div class="col">
+          <div id="t-idle" class="boot compact" data-show="idle" style="--o:1">
+            <div class="boot-line cmd">❯ awaiting command</div>
+            <div class="boot-line">no result yet · press run test</div>
+          </div>
+
+          <div data-show="run" style="--o:2">
+            <div class="scope brk" aria-label="Live measurement">
+              <div class="scope-ring"></div><div class="scope-ring"></div><div class="scope-ring"></div>
+              <div class="scope-sweep"></div>
+              <div class="scope-center"><div><div class="scope-readout" id="t-live">—</div><div class="scope-unit" id="t-live-unit">WAITING</div></div></div>
+            </div>
+          </div>
+          <!-- The log keeps only its newest lines, so it never pushes the graphics around. -->
+          <div class="boot compact" aria-live="polite" data-show="run" style="--o:4">
+            <div class="boot-bar"><div class="boot-fill" id="t-boot-fill"></div></div>
+            <div class="boot-pct" id="t-boot-pct">0% — CONNECTING</div>
+            <div class="boot-tail" id="t-boot-lines"></div>
+          </div>
+
+          <div data-show="result" style="--o:5">
+            <div class="hero">
+              <div class="hero-value" id="r-hero">—</div>
+              <div class="hero-status" id="r-status">—</div>
+              <div class="hero-meta" id="r-meta">—</div>
+            </div>
+            <div class="chips" id="r-chips"></div>
+            <div class="sect">Connection</div>
+            <div class="tiles" id="r-tiles"></div>
+          </div>
+          <div data-show="result" style="--o:7">
+            <div class="qband" id="r-qband">
+              <span class="qband-label" id="r-q-label">STABILITY —</span>
+              <span class="qband-ticks" id="r-q-ticks">········</span>
+              <button class="qband-action" id="r-why" aria-expanded="false" aria-controls="r-why-panel">WHY?&gt;</button>
+            </div>
+            <div class="why" id="r-why-panel" hidden></div>
+            <p class="note" id="r-when"></p>
+          </div>
+
+          <div style="--o:8">
+            <div class="sect">Phases</div>
+            <div class="switch">
+              <button class="chip" data-toggle="speed.runDownload">DOWNLOAD</button>
+              <button class="chip" data-toggle="speed.runUpload">UPLOAD</button>
+              <button class="chip" data-toggle="speed.runLoss">PACKET LOSS</button>
+            </div>
+            <button class="action" id="t-run-btn">▶ RUN TEST</button>
+          </div>
+        </div>
+
+        <div class="col">
+          <!-- Reserves its height, so phases without bars don't shift the layout. -->
+          <div class="live-chart" data-show="run" style="--o:3">
+            <div class="sect" id="t-live-label">Live</div>
+            <div class="bars" id="t-live-bars"></div>
+          </div>
+          <div data-show="result" style="--o:6">
+            <div id="r-down-block">
+              <div class="sect" id="r-down-label">Download · Mbps by second</div>
+              <div class="bars" id="r-down-bars"></div>
+            </div>
+            <div id="r-up-block">
+              <div class="sect" id="r-up-label">Upload · Mbps by second</div>
+              <div class="bars" id="r-up-bars"></div>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <!-- While running, graphics stay on top at fixed heights; the log below keeps only its newest lines. -->
-      <div id="t-run" hidden>
-        <div class="scope brk" aria-label="Live measurement">
-          <div class="scope-ring"></div><div class="scope-ring"></div><div class="scope-ring"></div>
-          <div class="scope-sweep"></div>
-          <div class="scope-center"><div><div class="scope-readout" id="t-live">—</div><div class="scope-unit" id="t-live-unit">WAITING</div></div></div>
-        </div>
-        <div class="live-chart">
-          <div class="sect" id="t-live-label">Live</div>
-          <div class="bars" id="t-live-bars"></div>
-        </div>
-        <div class="boot compact" aria-live="polite">
-          <div class="boot-bar"><div class="boot-fill" id="t-boot-fill"></div></div>
-          <div class="boot-pct" id="t-boot-pct">0% — CONNECTING</div>
-          <div class="boot-tail" id="t-boot-lines"></div>
-        </div>
-      </div>
-
-      <div id="t-result" hidden>
-        <div class="hero">
-          <div class="hero-value" id="r-hero">—</div>
-          <div class="hero-status" id="r-status">—</div>
-          <div class="hero-meta" id="r-meta">—</div>
-        </div>
-        <div class="chips" id="r-chips"></div>
-
-        <div class="sect">Connection</div>
-        <div class="tiles" id="r-tiles"></div>
-
-        <div id="r-down-block">
-          <div class="sect" id="r-down-label">Download · Mbps by second</div>
-          <div class="bars" id="r-down-bars"></div>
-        </div>
-        <div id="r-up-block">
-          <div class="sect" id="r-up-label">Upload · Mbps by second</div>
-          <div class="bars" id="r-up-bars"></div>
-        </div>
-
-        <div class="qband" id="r-qband">
-          <span class="qband-label" id="r-q-label">STABILITY —</span>
-          <span class="qband-ticks" id="r-q-ticks">········</span>
-          <button class="qband-action" id="r-why" aria-expanded="false" aria-controls="r-why-panel">WHY?&gt;</button>
-        </div>
-        <div class="why" id="r-why-panel" hidden></div>
-        <p class="note" id="r-when"></p>
-      </div>
-
-      <div class="sect">Phases</div>
-      <div class="switch">
-        <button class="chip" data-toggle="speed.runDownload">DOWNLOAD</button>
-        <button class="chip" data-toggle="speed.runUpload">UPLOAD</button>
-        <button class="chip" data-toggle="speed.runLoss">PACKET LOSS</button>
-      </div>
-      <button class="action" id="t-run-btn">▶ RUN TEST</button>
     </section>
 
     <!-- ── PACKET LOSS ──────────────────────────────────────────────────── -->
-    <section id="view-loss" class="view" data-title="// PACKET LOSS" hidden>
-      <!-- Results and live graphics first; parameters live below the run button. -->
-      <div id="l-live" hidden>
-        <div class="sect">Live</div>
-        <div class="tiles" id="l-live-tiles"></div>
-      </div>
+    <section id="view-loss" class="view" data-title="// PACKET LOSS" data-state="idle">
+      <div class="split reorder">
+        <div class="col">
+          <div data-show="run" style="--o:1">
+            <div class="sect">Live</div>
+            <div class="tiles" id="l-live-tiles"></div>
+          </div>
+          <div data-show="result" style="--o:2">
+            <div class="sect">Result</div>
+            <div class="tiles" id="l-tiles"></div>
+          </div>
+          <div class="boot compact" aria-live="polite" data-show="run" style="--o:5">
+            <div class="boot-bar"><div class="boot-fill" id="l-boot-fill"></div></div>
+            <div class="boot-pct" id="l-boot-pct">0% — CONNECTING</div>
+            <div class="boot-tail" id="l-boot-lines"></div>
+          </div>
 
-      <div id="l-result" hidden>
-        <div class="sect">Result</div>
-        <div class="tiles" id="l-tiles"></div>
-      </div>
+          <!-- Parameters live below the run button, so results come first. -->
+          <div style="--o:6">
+            <button class="action" id="l-run-btn">▶ RUN LOSS TEST</button>
 
-      <div id="l-map-block" hidden>
-        <div class="sect">Packet map · one glyph per packet</div>
-        <div class="pmap" id="l-map" role="img" aria-label="Packet map"></div>
-        <div class="legend">
-          <span><b class="pm-ok">▮</b> ON TIME</span><span><b class="pm-late">▯</b> LATE</span>
-          <span><b class="pm-lost">✕</b> LOST</span><span><b class="pm-wait">·</b> IN FLIGHT</span>
+            <div class="sect">Profile</div>
+            <div class="switch" id="l-presets"></div>
+
+            <div class="sect">Parameters</div>
+            <div class="fields">
+              <label class="field"><span>PACKET SIZE · BYTES</span><input type="number" inputmode="numeric" data-setting="loss.packetSize"></label>
+              <label class="field"><span>RATE · PACKETS / S</span><input type="number" inputmode="numeric" data-setting="loss.rate"></label>
+              <label class="field"><span>DURATION · S</span><input type="number" inputmode="numeric" data-setting="loss.durationS"></label>
+              <label class="field"><span>LATE AFTER · MS</span><input type="number" inputmode="numeric" data-setting="loss.lateMs"></label>
+              <label class="field"><span>PRE-WAIT · S NOT RECORDED</span><input type="number" inputmode="numeric" data-setting="loss.preWaitS"></label>
+            </div>
+            <p class="note" id="l-estimate"></p>
+          </div>
+        </div>
+
+        <div class="col">
+          <div data-show="run result" style="--o:3">
+            <div class="sect">Packet map · one glyph per packet</div>
+            <div class="pmap" id="l-map" role="img" aria-label="Packet map"></div>
+            <div class="legend">
+              <span><b class="pm-ok">▮</b> ON TIME</span><span><b class="pm-late">▯</b> LATE</span>
+              <span><b class="pm-lost">✕</b> LOST</span><span><b class="pm-wait">·</b> IN FLIGHT</span>
+            </div>
+          </div>
+          <div data-show="run result" style="--o:4">
+            <div class="sect" id="l-rtt-label">Latency · ms by second</div>
+            <div class="bars" id="l-rtt-bars"></div>
+            <div id="l-lost-block">
+              <div class="sect" id="l-lost-label">Lost · packets by second</div>
+              <div class="bars" id="l-lost-bars"></div>
+            </div>
+            <p class="note" id="l-when"></p>
+          </div>
         </div>
       </div>
-
-      <div id="l-charts" hidden>
-        <div class="sect" id="l-rtt-label">Latency · ms by second</div>
-        <div class="bars" id="l-rtt-bars"></div>
-        <div id="l-lost-block">
-          <div class="sect" id="l-lost-label">Lost · packets by second</div>
-          <div class="bars" id="l-lost-bars"></div>
-        </div>
-        <p class="note" id="l-when"></p>
-      </div>
-
-      <div id="l-run" hidden>
-        <div class="boot compact" aria-live="polite">
-          <div class="boot-bar"><div class="boot-fill" id="l-boot-fill"></div></div>
-          <div class="boot-pct" id="l-boot-pct">0% — CONNECTING</div>
-          <div class="boot-tail" id="l-boot-lines"></div>
-        </div>
-      </div>
-
-      <button class="action" id="l-run-btn">▶ RUN LOSS TEST</button>
-
-      <div class="sect">Profile</div>
-      <div class="switch" id="l-presets"></div>
-
-      <div class="sect">Parameters</div>
-      <div class="fields">
-        <label class="field"><span>PACKET SIZE · BYTES</span><input type="number" inputmode="numeric" data-setting="loss.packetSize"></label>
-        <label class="field"><span>RATE · PACKETS / S</span><input type="number" inputmode="numeric" data-setting="loss.rate"></label>
-        <label class="field"><span>DURATION · S</span><input type="number" inputmode="numeric" data-setting="loss.durationS"></label>
-        <label class="field"><span>LATE AFTER · MS</span><input type="number" inputmode="numeric" data-setting="loss.lateMs"></label>
-        <label class="field"><span>PRE-WAIT · S NOT RECORDED</span><input type="number" inputmode="numeric" data-setting="loss.preWaitS"></label>
-      </div>
-      <p class="note" id="l-estimate"></p>
     </section>
 
     <!-- ── HISTORY ──────────────────────────────────────────────────────── -->
@@ -165,6 +182,8 @@
 
     <!-- ── SETTINGS ─────────────────────────────────────────────────────── -->
     <section id="view-settings" class="view" data-title="// SETTINGS" hidden>
+      <div class="split">
+        <div class="col">
       <div class="sect">Servers</div>
       <div id="s-auto"></div>
       <div id="s-servers"></div>
@@ -187,7 +206,9 @@
         <button class="chip" data-toggle="speed.adaptive">STOP WHEN STABLE</button>
       </div>
       <p class="note">STOP WHEN STABLE ENDS A PHASE AFTER 4 S ONCE THE SPEED HOLDS STEADY, OR AT 400 MB. THE PHASE DURATION IS THE LIMIT. THE FULL TEST'S PACKET-LOSS PHASE USES THE PARAMETERS ON THE LOSS SCREEN.</p>
+        </div>
 
+        <div class="col">
       <div class="sect">Palette</div>
       <div class="switch" data-axis="palette">
         <button class="chip" data-v="term-phosphor">PHOSPHOR</button>
@@ -221,6 +242,8 @@
       <p class="note">NO ANALYTICS. RESULTS AND SETTINGS NEVER LEAVE THIS DEVICE; TESTS TALK ONLY TO THE SELECTED SERVER. IN AUTO MODE THE APP ALSO DOWNLOADS THE PUBLIC SERVER LIST FROM GITHUB ONCE A DAY AND PINGS EACH SERVER ON IT TO FIND THE NEAREST.</p>
 
       <button class="action" id="s-reset">↺ RESET SETTINGS</button>
+        </div>
+      </div>
     </section>
   </main>
 

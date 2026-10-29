@@ -12,6 +12,33 @@ main { flex: 1; }
 header { position: sticky; top: 0; z-index: 10; background: var(--term-bg); padding-bottom: 4px; }
 .prompt { overflow-wrap: anywhere; }
 
+/* ── Screen sizes (DESIGN_GUIDE §5) ──────────────────────────────────────
+   app.js zooms the app for the screen (tablets 1.2×, desktops with a mouse 1.4×) and sets
+   data-layout="wide" on <html> once the scaled layout is at least 720px wide. */
+
+/* Test and loss screens: a block with data-show appears only in the states it lists. */
+.view[data-state="idle"] [data-show]:not([data-show~="idle"]),
+.view[data-state="run"] [data-show]:not([data-show~="run"]),
+.view[data-state="result"] [data-show]:not([data-show~="result"]) { display: none; }
+
+/* On narrow layouts the two columns' blocks interleave in phone order (--o). */
+.split.reorder { display: flex; flex-direction: column; }
+.split.reorder > .col { display: contents; }
+.split.reorder > .col > * { order: var(--o, 0); }
+
+/* Wide layouts: summary and controls on the left, the series on the right, divided by a
+   hairline. Screens with only one column of content (history, a test screen before its
+   first run) stay a centred single column rather than stretching. */
+/* Past 1280px of window the app stops growing and sits centred between hairlines.
+   --zoom (set by app.js) converts that window width into the zoomed layout's pixels. */
+[data-layout="wide"] #app { max-width: calc(1280px / var(--zoom, 1)); border-inline: 1px solid var(--term-line); }
+html { scrollbar-width: thin; scrollbar-color: var(--term-muted) transparent; }
+[data-layout="wide"] .view { max-width: 560px; margin-inline: auto; }
+[data-layout="wide"] .view:has(> .split):not([data-state="idle"]) { max-width: none; }
+[data-layout="wide"] .view:not([data-state="idle"]) > .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+[data-layout="wide"] .view:not([data-state="idle"]) > .split > .col { display: block; }
+[data-layout="wide"] .view:not([data-state="idle"]) > .split > .col + .col { border-left: 1px solid var(--term-line); }
+
 /* Boot block inside a screen, rather than as a full-screen loader. The progress bar sits
    first; the log below is a fixed-height tail, so new lines never move anything else. */
 .boot.compact { padding: 6px var(--gutter) 6px; }
