@@ -22,6 +22,14 @@ npm start
 
 Open http://localhost:8080. The server hosts the web app and the measurement API, and the app uses that server by default. To test from another device on your network, open `http://<this-machine's-LAN-IP>:8080`.
 
+## Web version
+
+The app is also published at https://emmalegrottaglie.github.io/terminal-speedtest/. The `Pages` workflow (`.github/workflows/pages.yml`) publishes `web/` whenever it changes on `main`.
+
+That site is only the app; it doesn't measure anything itself.
+- It starts in AUTO mode and tests against the public servers in `web/servers.json`.
+- You can also add your own server under **Settings → Servers**. It must be an `https://` address: an HTTPS page can't reach `http://` servers, so LAN servers won't work from the site. For those, open the server's own page (see Quick start).
+
 ## Server configuration
 
 Set these as environment variables:

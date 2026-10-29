@@ -1,0 +1,43 @@
+# Publishes the web app (web/) to GitHub Pages whenever main changes.
+# The site is a static copy of the app, so it starts in AUTO mode and tests against the
+# public servers in web/servers.json, or against servers the user adds.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: [web/**, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Mark the page as static hosting, so the app doesn't treat the Pages origin as a
+      # measurement server (see isStaticHosting in web/js/settings.js).
+      - name: Build site
+        run: |
+          cp -r web _site
+          sed -i 's#<meta charset="utf-8">#&\n<meta name="termspeed-hosting" content="static">#' _site/index.html
+          grep -q 'name="termspeed-hosting"' _site/index.html
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5
