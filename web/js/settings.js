@@ -33,8 +33,14 @@ function isNative() {
 }
 
 // When the page is served by the measurement server itself, that server is the default.
+// A static copy of the app, such as the GitHub Pages site, is not a measurement server. Its
+// deploy marks the page with <meta name="termspeed-hosting" content="static">.
+function isStaticHosting() {
+  return document.querySelector('meta[name="termspeed-hosting"][content="static"]') !== null;
+}
+
 function defaultServers() {
-  if (isNative() || !/^https?:$/.test(location.protocol)) return [];
+  if (isNative() || isStaticHosting() || !/^https?:$/.test(location.protocol)) return [];
   return [{ url: location.origin }];
 }
 
