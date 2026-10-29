@@ -25,7 +25,7 @@ Rules we arrived at while charting a contested claim: that drone strikes on Yand
 ## Gaps and partial periods
 
 - **A gap is never a zero.** A failed or missing fetch is a break in the line or a hatched cell, never a value. Fill quiet hours with zero only inside a period that has data and only inside the range that was actually requested.
-- **Detect source outages.** When a source returns zero for everything (X's archive did, for 9 hours), check a query that is always busy. If even that is zero, the period is a gap, not a real zero.
+- **Detect source outages.** When a source returns zero for everything (Twitter's archive did, for 9 hours), check a query that is always busy. If even that is zero, the period is a gap, not a real zero.
 - **Average only complete periods.** A daily mean needs a minimum of hourly values (we used 20 of 24). A partial day's mean reflects which hours were collected, not the day. This is why "today" never appears as a daily value.
 - **Stamp every point consistently,** at the start or the end of the period it measures, across every source. Mixing the two put two of our sources an hour apart.
 - **Exact counts replace estimates.** When an exact count arrives for a period that held an estimate, replace the estimate; averaging the two only adds noise.
@@ -54,5 +54,5 @@ In October 2026 a claim spread that the strikes had silenced Russian bots. Fact-
 |---|---|
 | A real chart of automated web traffic from Yandex's network (it fell 99%) was read as "bots on social media". The traffic was mostly Yandex's own search crawler. | Say exactly what is measured; a chart of one thing is not evidence about another. |
 | An AfD "bot activity" chart, seen more than 4 million times, had uneven axes, no source, and data running four days past its posting date. The politician who posted it told ZDF he had no verifiable data. | Label axes, cite the source, date the data. |
-| Claims of MAGA accounts "going quiet" rested on screenshots and how social media felt. Measurements found MAGA mentions on X rose 25%. | Compare with a baseline and a control, not an impression. |
+| Claims of MAGA accounts "going quiet" rested on screenshots and how social media felt. Measurements found MAGA mentions on Twitter rose 25%. | Compare with a baseline and a control, not an impression. |
 | Two different baselines ("0.4% of the two-week peak", "94% below late September") were quoted as if they were the same number. | One baseline, named by its dates. |

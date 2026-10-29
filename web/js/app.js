@@ -162,6 +162,15 @@ function route() {
 }
 
 // ── Display settings ──────────────────────────────────────────────────────
+// Type scale for the screen (DESIGN_GUIDE §5): phones 1×; tablets, whose shorter side is
+// 600px or more, 1.2×; desktops with a mouse and a window at least 600px wide, 1.4×.
+function screenScale() {
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches) return innerWidth >= 600 ? 1.4 : 1;
+  return Math.min(innerWidth, innerHeight) >= 600 ? 1.2 : 1;
+}
+// Two columns once the scaled layout fits two phone columns (360px each).
+const WIDE_MIN = 720;
+
 function applyDisplay() {
   const d = settings.display;
   const html = document.documentElement;
@@ -169,7 +178,12 @@ function applyDisplay() {
   if (d.accents === 'broadcast') delete html.dataset.accents; else html.dataset.accents = d.accents;
   html.dataset.font = d.font;
   $('crt').hidden = !d.crt;
-  $('app').style.zoom = d.scale === 1 ? '' : String(d.scale);
+  // The user's text size multiplies the screen's. Zoom scales sizes, line heights,
+  // tracking and fixed widths together.
+  const zoom = Math.round(d.scale * screenScale() * 100) / 100;
+  $('app').style.zoom = zoom === 1 ? '' : String(zoom);
+  $('app').style.setProperty('--zoom', zoom);
+  if (innerWidth / zoom >= WIDE_MIN) html.dataset.layout = 'wide'; else delete html.dataset.layout;
   $('s-scale').textContent = `${Math.round(d.scale * 100)}%`;
   fitHistory();
   document.querySelectorAll('.switch[data-axis]').forEach((group) => {
@@ -409,9 +423,7 @@ async function runFull() {
   const command = promptFor('test');
   setRunning('full', ctrl);
 
-  $('t-idle').hidden = true;
-  $('t-result').hidden = true;
-  $('t-run').hidden = false;
+  $('view-test').dataset.state = 'run';
   const liveBars = (title, unit, values, fmt, opts) => renderBars($('t-live-bars'), $('t-live-label'), title, unit, values, fmt, opts);
   $('t-live-bars').innerHTML = '';
   $('t-live-label').textContent = 'Live · waiting for data';
@@ -504,8 +516,7 @@ async function runFull() {
       stability: G.stabilityOf({ jitter: lat.jitter, loss: lossPct, late: loss?.latePct ?? null }),
     };
     renderFull(result);
-    $('t-run').hidden = true;
-    $('t-result').hidden = false;
+    $('view-test').dataset.state = 'result';
     if (settings.history.save) {
       H.add({
         at: result.at.toISOString(), kind: 'full', server: info.name,
@@ -514,14 +525,15 @@ async function runFull() {
       });
     }
   } catch (err) {
-    $('t-run').hidden = true;
     if (err.name === 'AbortError') {
       toast('TEST ABORTED', 'info');
     } else {
       if (base && !serverStatus.get(base)?.ok) serverStatus.set(base, { ok: false, error: err.message });
       toast(explainError(err, base));
     }
-    if ($('r-hero').textContent === DASH) { renderIdle(); $('t-idle').hidden = false; } else $('t-result').hidden = false;
+    // Back to the previous result, or to the idle log when there is none.
+    if ($('r-hero').textContent === DASH) renderIdle();
+    $('view-test').dataset.state = $('r-hero').textContent === DASH ? 'idle' : 'result';
   } finally {
     setRunning(null);
   }
@@ -606,11 +618,7 @@ async function runLoss() {
 
   // Live view: counters, packet map and latency chart on top; the log tail below them.
   const show = (live, result) => {
-    $('l-live').hidden = !live;
-    $('l-run').hidden = !live;
-    $('l-result').hidden = !result;
-    $('l-map-block').hidden = !(live || result);
-    $('l-charts').hidden = !(live || result);
+    $('view-loss').dataset.state = live ? 'run' : result ? 'result' : 'idle';
   };
   show(true, false);
   $('l-map').innerHTML = '';
@@ -829,6 +837,7 @@ function renderServers() {
 // ── Event wiring ──────────────────────────────────────────────────────────
 function bind() {
   window.addEventListener('hashchange', route);
+  window.addEventListener('resize', applyDisplay);
   new ResizeObserver(fitHistory).observe($('h-wrap'));
   document.querySelector('.nav').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-view]');
